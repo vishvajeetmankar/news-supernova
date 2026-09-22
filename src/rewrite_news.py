@@ -16,14 +16,14 @@ def rewrite_story(raw_title: str) -> dict:
     client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
     prompt = f"""Tumhe ek trending news headline di ja rahi hai:
-"{raw_title}"
+{json.dumps(raw_title, ensure_ascii=False)}
 
 Isko dekh kar (verbatim copy MAT karna, apne alfaazon me likhna):
 1. Ek naya, masaledar, catchy Hindi title bana jo YouTube Short ke liye ek highlight jaisa lage. Max 8-9 words.
 2. Uska 2-3 line ka summary Hindi me likh jo curiosity create kare.
 3. 3-4 simple ENGLISH keywords do jo is news se related generic stock-photo search ke liye use ho sakein (jaise "stock market crash graph" ya "cricket stadium celebration") - koi real person ka naam mat daalna.
 
-Sirf neeche diye JSON format me jawaab do, kuch aur likhna hi mat:
+JSON object ke roop me sirf ye teen string fields return karo, koi markdown, code fence ya extra text mat do:
 {{"title": "...", "summary": "...", "image_keywords": "..."}}
 """
 
@@ -32,15 +32,14 @@ Sirf neeche diye JSON format me jawaab do, kuch aur likhna hi mat:
         messages=[{"role": "user", "content": prompt}],
         temperature=0.8,
         max_tokens=500,
-        response_format={"type": "json_object"},
     )
 
-    text = resp.choices[0].message.content.strip()
+    text = (resp.choices[0].message.content or "").strip()
     text = text.replace("```json", "").replace("```", "").strip()
 
     try:
         data = json.loads(text)
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
         data = {}
 
     title = str(data.get("title") or "").strip()
