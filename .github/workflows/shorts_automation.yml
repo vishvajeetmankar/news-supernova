@@ -1,0 +1,49 @@
+name: News Supernova - Auto Shorts
+
+on:
+  workflow_dispatch: {}   # <-- lets YOU click "Run workflow" anytime to test manually
+  schedule:
+    # All times UTC. IST = UTC + 5:30
+    - cron: "30 3 * * *"   # 9:00 AM IST
+    - cron: "45 3 * * *"   # 9:15 AM IST
+    - cron: "0 4 * * *"    # 9:30 AM IST
+    - cron: "30 13 * * *"  # 7:00 PM IST
+    - cron: "45 13 * * *"  # 7:15 PM IST
+
+jobs:
+  make-and-upload-short:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run the pipeline (fetch -> rewrite -> images -> render -> upload)
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          CHANNEL_NAME: "News Supernova"
+        run: python main.py
+
+      # Saves used_titles.json back to the repo so tomorrow's run doesn't repeat stories
+      - name: Commit updated dedup log
+        run: |
+          git config user.name "news-supernova-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add used_titles.json || true
+          git diff --quiet && git diff --staged --quiet || git commit -m "chore: update used titles log [skip ci]"
+          git push || true
