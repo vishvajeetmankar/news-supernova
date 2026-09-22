@@ -74,6 +74,9 @@ def _wrapped_text_image(text, font_path, font_size, max_width, fill, bg=None):
 
 def make_middle_panel(title, summary, font_path):
     """White strip with bold black title + summary, centered."""
+    title = (title or "आज की बड़ी खबर").strip()
+    summary = (summary or "इस खबर से जुड़ी महत्वपूर्ण जानकारी सामने आई है।").strip()
+
     panel = Image.new("RGB", (W, MID_H), "white")
 
     title_img = _wrapped_text_image(title, font_path, 62, W - 100, fill="black")
@@ -119,6 +122,13 @@ def _kenburns_clip(image_path, target_w, target_h, duration, zoom_in=True):
 
 def render_short(top_image_path, bottom_image_path, title, summary,
                   music_path, channel_name, out_path):
+    for path in (top_image_path, bottom_image_path):
+        if not os.path.isfile(path) or os.path.getsize(path) == 0:
+            raise RuntimeError(f"Invalid image file: {path}")
+
+    title = (title or "आज की बड़ी खबर").strip()
+    summary = (summary or "इस खबर से जुड़ी महत्वपूर्ण जानकारी सामने आई है।").strip()
+
     font_path = ensure_font()
 
     # ---- Middle white text panel ----
@@ -168,7 +178,7 @@ def render_short(top_image_path, bottom_image_path, title, summary,
 
     final.write_videofile(
         out_path, fps=30, codec="libx264", audio_codec="aac",
-        preset="medium", threads=4, logger=None
+        preset="medium", threads=2, logger="bar"
     )
     return out_path
 
