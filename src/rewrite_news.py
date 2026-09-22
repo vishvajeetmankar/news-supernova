@@ -9,7 +9,7 @@ import os
 import json
 from groq import Groq
 
-MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")  # free tier on Groq as of writing; check console.groq.com/docs/models
+MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")  # check console.groq.com/docs/models if this ever changes
 
 
 def rewrite_story(raw_title: str) -> dict:
@@ -31,7 +31,8 @@ Sirf neeche diye JSON format me jawaab do, kuch aur likhna hi mat:
         model=MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.8,
-        max_tokens=300,
+        max_tokens=500,
+        response_format={"type": "json_object"},
     )
 
     text = resp.choices[0].message.content.strip()
@@ -40,13 +41,24 @@ Sirf neeche diye JSON format me jawaab do, kuch aur likhna hi mat:
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
-        # fallback: crude split if model didn't return clean JSON
-        data = {"title": raw_title[:40], "summary": text[:150], "image_keywords": "news india"}
+        data = {}
+
+    title = str(data.get("title") or "").strip()
+    summary = str(data.get("summary") or "").strip()
+    image_keywords = str(data.get("image_keywords") or "").strip()
+
+    # Safety net: never let an empty/malformed AI response reach the video renderer
+    if not title:
+        title = raw_title.strip()[:90] or "आज की बड़ी खबर"
+    if not summary:
+        summary = "इस खबर से जुड़ी महत्वपूर्ण जानकारी सामने आई है। पूरी जानकारी वीडियो में।"
+    if not image_keywords:
+        image_keywords = "india news"
 
     return {
-        "title": data.get("title", "").strip(),
-        "summary": data.get("summary", "").strip(),
-        "image_keywords": data.get("image_keywords", "india news").strip(),
+        "title": title,
+        "summary": summary,
+        "image_keywords": image_keywords,
     }
 
 
