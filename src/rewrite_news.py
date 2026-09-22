@@ -9,7 +9,7 @@ import os
 import json
 from groq import Groq
 
-MODEL = "llama-3.3-70b-versatile"  # free tier on Groq as of writing; check console.groq.com/docs/models
+MMODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")  # free tier on Groq as of writing; check console.groq.com/docs/models
 
 
 def rewrite_story(raw_title: str) -> dict:
