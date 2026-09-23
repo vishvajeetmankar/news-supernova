@@ -66,10 +66,12 @@ def run_once():
         )
 
         print("Step 5/5: uploading to YouTube...")
+        tag_list = [t.strip() for t in rewritten["tags"].split(",") if t.strip()]
         video_id = upload_short(
             video_path=out_video,
             title=rewritten["title"],
-            description=rewritten["summary"] + f"\n\nSource: {story.get('source','')}",
+            description=rewritten["summary"] + f"\n\nSource: {story.get('source','')}\n\n" + rewritten["hashtags"],
+            tags=tag_list,
         )
         print(f"DONE ✅  https://youtube.com/shorts/{video_id}")
 
