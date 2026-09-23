@@ -40,6 +40,13 @@ def _hash(title):
     return hashlib.sha256(title.strip().lower().encode("utf-8")).hexdigest()
 
 
+def _clean(text):
+    """Strip invalid/undecodable bytes so corrupted RSS text never enters the pipeline."""
+    if text is None:
+        return ""
+    return text.encode("utf-8", errors="ignore").decode("utf-8").strip()
+
+
 def get_trending_story():
     """
     Picks ONE fresh (not-recently-used) trending story.
@@ -54,7 +61,7 @@ def get_trending_story():
         random.shuffle(entries)
 
         for entry in entries:
-            title = entry.get("title", "").strip()
+            title = _clean(entry.get("title", ""))
             if not title:
                 continue
             h = _hash(title)
