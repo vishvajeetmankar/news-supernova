@@ -9,21 +9,43 @@ GitHub Actions job never needs a browser login.
 
 import os
 from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
 
+REQUIRED_VARS = ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"]
+
 
 def _get_service():
+    missing = [name for name in REQUIRED_VARS if not os.getenv(name)]
+    if missing:
+        raise RuntimeError("Missing YouTube OAuth environment variables: " + ", ".join(missing))
+
+    # .strip() defends against accidental leading/trailing spaces, quotes or
+    # newlines that sneak in when copy-pasting secrets into GitHub
     creds = Credentials(
         token=None,
-        refresh_token=os.environ["YOUTUBE_REFRESH_TOKEN"],
-        client_id=os.environ["YOUTUBE_CLIENT_ID"],
-        client_secret=os.environ["YOUTUBE_CLIENT_SECRET"],
+        refresh_token=os.environ["YOUTUBE_REFRESH_TOKEN"].strip().strip('"').strip("'"),
+        client_id=os.environ["YOUTUBE_CLIENT_ID"].strip().strip('"').strip("'"),
+        client_secret=os.environ["YOUTUBE_CLIENT_SECRET"].strip().strip('"').strip("'"),
         token_uri="https://oauth2.googleapis.com/token",
         scopes=SCOPES,
     )
+
+    try:
+        creds.refresh(Request())
+    except RefreshError as exc:
+        raise RuntimeError(
+            "YouTube OAuth refresh failed (invalid_grant). This means the "
+            "refresh token, client ID or client secret don't match, or the "
+            "token was revoked/expired. Regenerate YOUTUBE_REFRESH_TOKEN "
+            "with src/get_youtube_token.py using the SAME client ID/secret "
+            "that are stored in GitHub Secrets, then update the secret."
+        ) from exc
+
     return build("youtube", "v3", credentials=creds)
 
 
@@ -33,7 +55,7 @@ def upload_short(video_path: str, title: str, description: str, tags=None):
     body = {
         "snippet": {
             "title": title[:95] + " #shorts",   # YouTube title limit ~100 chars
-            "description": description + "\n\n#shorts #news #trending",
+            "description": description,
             "tags": tags or ["news", "shorts", "trending", "hindi news"],
             "categoryId": "25",  # News & Politics
         },
