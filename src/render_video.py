@@ -76,46 +76,36 @@ def _wrapped_text_image(text, font_path, font_size, max_width, fill, bg=None,
 
 
 def make_middle_panel(title, summary, font_path):
-    """Off-white strip with BOLD outlined red title + dark summary, centered, with a red divider."""
+    """Solid RED news band: white bold title on top, yellow bold summary below (KK-News style)."""
     title = (title or "आज की बड़ी खबर").strip()
     summary = (summary or "इस खबर से जुड़ी महत्वपूर्ण जानकारी सामने आई है।").strip()
 
-    panel = Image.new("RGB", (W, MID_H), (250, 250, 248))
-    draw = ImageDraw.Draw(panel)
+    panel = Image.new("RGB", (W, MID_H), (196, 20, 20))  # solid news-red band
 
     title_img = _wrapped_text_image(
-        title, font_path, 70, W - 80, fill=(215, 20, 25),
-        stroke_width=3, stroke_fill=(20, 10, 10)
+        title, font_path, 66, W - 70, fill="white",
+        stroke_width=3, stroke_fill=(90, 0, 0)
     )
     summary_img = _wrapped_text_image(
-        summary, font_path, 40, W - 130, fill=(25, 25, 25),
-        stroke_width=1, stroke_fill=(25, 25, 25)
+        summary, font_path, 42, W - 110, fill=(255, 221, 0),
+        stroke_width=2, stroke_fill=(80, 40, 0)
     )
 
-    divider_h = 8
-    total_h = title_img.height + divider_h + 24 + summary_img.height
+    total_h = title_img.height + 20 + summary_img.height
     start_y = max(6, (MID_H - total_h) // 2)
 
     panel.paste(title_img, ((W - title_img.width) // 2, start_y), title_img)
-
-    divider_y = start_y + title_img.height + 10
-    divider_w = 180
-    draw.rectangle(
-        [(W - divider_w) // 2, divider_y, (W + divider_w) // 2, divider_y + divider_h],
-        fill=(200, 16, 24),
-    )
-
-    panel.paste(summary_img, ((W - summary_img.width) // 2, divider_y + divider_h + 18), summary_img)
+    panel.paste(summary_img, ((W - summary_img.width) // 2, start_y + title_img.height + 20), summary_img)
     return panel
 
 
 def make_breaking_badge(font_path, text="ब्रेकिंग न्यूज़"):
-    """Red 'BREAKING NEWS' style ribbon badge, TV-news style."""
-    font = ImageFont.truetype(font_path, 44)
+    """Red 'BREAKING NEWS' style ribbon badge, TV-news style - big and bold."""
+    font = ImageFont.truetype(font_path, 58)
     dummy = Image.new("RGBA", (10, 10))
     d = ImageDraw.Draw(dummy)
-    bbox = d.textbbox((0, 0), text, font=font, stroke_width=2)
-    pad_x, pad_y = 40, 18
+    bbox = d.textbbox((0, 0), text, font=font, stroke_width=3)
+    pad_x, pad_y = 46, 22
     w = bbox[2] - bbox[0] + pad_x * 2
     h = bbox[3] - bbox[1] + pad_y * 2
 
@@ -123,10 +113,10 @@ def make_breaking_badge(font_path, text="ब्रेकिंग न्यू�
     d = ImageDraw.Draw(img)
     d.rectangle([0, 0, w, h], fill=(215, 15, 15, 255))
     # small white square "on-air" dot for extra news feel
-    dot_r = 9
-    d.ellipse([pad_x - 28, h // 2 - dot_r, pad_x - 28 + dot_r * 2, h // 2 + dot_r], fill="white")
-    d.text((pad_x, pad_y - 6), text, font=font, fill="white",
-           stroke_width=2, stroke_fill=(120, 0, 0))
+    dot_r = 11
+    d.ellipse([pad_x - 32, h // 2 - dot_r, pad_x - 32 + dot_r * 2, h // 2 + dot_r], fill="white")
+    d.text((pad_x, pad_y - 8), text, font=font, fill="white",
+           stroke_width=3, stroke_fill=(110, 0, 0))
     return img
 
 
@@ -146,15 +136,31 @@ def make_vignette(w, h, top=True, strength=140):
     return black
 
 
-def make_watermark(text, font_path, size=34):
-    font = ImageFont.truetype(font_path, size)
+def make_logo_badge(font_path, line1="NEWS", line2="SUPERNOVA"):
+    """Channel logo bug: solid red box, bold white two-line text (like a TV news channel logo)."""
+    font1 = ImageFont.truetype(font_path, 30)
+    font2 = ImageFont.truetype(font_path, 26)
     dummy = Image.new("RGBA", (10, 10))
     d = ImageDraw.Draw(dummy)
-    bbox = d.textbbox((0, 0), text, font=font)
-    w, h = bbox[2] - bbox[0] + 40, bbox[3] - bbox[1] + 24
-    img = Image.new("RGBA", (w, h), (0, 0, 0, 110))  # semi-transparent black pill
+
+    b1 = d.textbbox((0, 0), line1, font=font1, stroke_width=2)
+    b2 = d.textbbox((0, 0), line2, font=font2, stroke_width=1)
+    w1, h1 = b1[2] - b1[0], b1[3] - b1[1]
+    w2, h2 = b2[2] - b2[0], b2[3] - b2[1]
+
+    pad_x, pad_y, gap = 26, 14, 4
+    w = max(w1, w2) + pad_x * 2
+    h = h1 + h2 + gap + pad_y * 2
+
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    d.text((20, 8), text, font=font, fill="white")
+    d.rectangle([0, 0, w, h], fill=(205, 16, 16, 255))
+    d.rectangle([0, 0, w, h], outline="white", width=3)
+
+    d.text(((w - w1) // 2, pad_y - 4), line1, font=font1, fill="white",
+           stroke_width=2, stroke_fill=(110, 0, 0))
+    d.text(((w - w2) // 2, pad_y + h1 + gap - 2), line2, font=font2, fill="white",
+           stroke_width=1, stroke_fill=(110, 0, 0))
     return img
 
 
@@ -262,23 +268,27 @@ def render_short(top_image_path, bottom_image_path, title, summary,
     bottom_vignette_img.save(bottom_vignette_path)
     bottom_vignette = ImageClip(bottom_vignette_path).set_duration(DURATION).set_position((0, H - 120))
 
-    # ---- Breaking-news style red badge, top-left over the top image ----
+    # ---- Breaking-news style red badge, top-left over the top image (bigger, lower) ----
     badge_img = make_breaking_badge(font_path)
     badge_path = "/tmp/_badge.png"
     badge_img.save(badge_path)
-    badge_clip = ImageClip(badge_path).set_duration(DURATION).set_position((30, 90))
+    badge_clip = ImageClip(badge_path).set_duration(DURATION).set_position((30, 160))
 
-    # ---- Watermarks ----
-    wm_img = make_watermark(channel_name, font_path)
-    wm_path = "/tmp/_watermark.png"
-    wm_img.save(wm_path)
+    # ---- Channel logo badges (top-right and bottom-right), KK-News style ----
+    words = channel_name.strip().upper().split(maxsplit=1)
+    logo_line1 = words[0] if words else "NEWS"
+    logo_line2 = words[1] if len(words) > 1 else ""
 
-    wm_top = (ImageClip(wm_path)
+    logo_img = make_logo_badge(font_path, logo_line1, logo_line2)
+    logo_path = "/tmp/_logo.png"
+    logo_img.save(logo_path)
+
+    wm_top = (ImageClip(logo_path)
               .set_duration(DURATION)
-              .set_position(("center", 30)))
-    wm_bottom = (ImageClip(wm_path)
+              .set_position((W - logo_img.width - 30, 30)))
+    wm_bottom = (ImageClip(logo_path)
                  .set_duration(DURATION)
-                 .set_position(("center", H - wm_img.height - 30)))
+                 .set_position((W - logo_img.width - 30, H - logo_img.height - 30)))
 
     # ---- Pulsing red alert border around the whole frame ----
     border_clip = _pulsing_border_clip(W, H, DURATION)
