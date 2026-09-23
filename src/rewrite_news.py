@@ -46,6 +46,12 @@ JSON object ke roop me sirf ye teen string fields return karo, koi markdown, cod
     summary = str(data.get("summary") or "").strip()
     image_keywords = str(data.get("image_keywords") or "").strip()
 
+    # Strip any invalid/undecodable characters (defends against corrupted
+    # source text or odd model output reaching the video renderer)
+    title = title.encode("utf-8", errors="ignore").decode("utf-8")
+    summary = summary.encode("utf-8", errors="ignore").decode("utf-8")
+    image_keywords = image_keywords.encode("utf-8", errors="ignore").decode("utf-8")
+
     # Safety net: never let an empty/malformed AI response reach the video renderer
     if not title:
         title = raw_title.strip()[:90] or "आज की बड़ी खबर"
