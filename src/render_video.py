@@ -12,10 +12,11 @@ starting at a random point.
 import os
 import random
 import textwrap
+import numpy as np
 import requests
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from moviepy.editor import (
-    ImageClip, CompositeVideoClip, AudioFileClip, concatenate_videoclips
+    ImageClip, CompositeVideoClip, AudioFileClip, VideoClip, concatenate_videoclips
 )
 
 W, H = 1080, 1920
@@ -73,21 +74,67 @@ def _wrapped_text_image(text, font_path, font_size, max_width, fill, bg=None):
 
 
 def make_middle_panel(title, summary, font_path):
-    """White strip with bold black title + summary, centered."""
+    """Off-white strip with bold RED title + dark summary, centered, with a red divider."""
     title = (title or "आज की बड़ी खबर").strip()
     summary = (summary or "इस खबर से जुड़ी महत्वपूर्ण जानकारी सामने आई है।").strip()
 
-    panel = Image.new("RGB", (W, MID_H), "white")
+    panel = Image.new("RGB", (W, MID_H), (250, 250, 248))
+    draw = ImageDraw.Draw(panel)
 
-    title_img = _wrapped_text_image(title, font_path, 62, W - 100, fill="black")
-    summary_img = _wrapped_text_image(summary, font_path, 38, W - 140, fill=(40, 40, 40))
+    title_img = _wrapped_text_image(title, font_path, 64, W - 100, fill=(200, 16, 24))
+    summary_img = _wrapped_text_image(summary, font_path, 38, W - 140, fill=(35, 35, 35))
 
-    total_h = title_img.height + summary_img.height + 30
+    divider_h = 6
+    total_h = title_img.height + divider_h + 24 + summary_img.height
     start_y = max(10, (MID_H - total_h) // 2)
 
     panel.paste(title_img, ((W - title_img.width) // 2, start_y), title_img)
-    panel.paste(summary_img, ((W - summary_img.width) // 2, start_y + title_img.height + 30), summary_img)
+
+    divider_y = start_y + title_img.height + 10
+    divider_w = 140
+    draw.rectangle(
+        [(W - divider_w) // 2, divider_y, (W + divider_w) // 2, divider_y + divider_h],
+        fill=(200, 16, 24),
+    )
+
+    panel.paste(summary_img, ((W - summary_img.width) // 2, divider_y + divider_h + 18), summary_img)
     return panel
+
+
+def make_breaking_badge(font_path, text="ब्रेकिंग न्यूज़"):
+    """Red 'BREAKING NEWS' style ribbon badge, TV-news style."""
+    font = ImageFont.truetype(font_path, 36)
+    dummy = Image.new("RGBA", (10, 10))
+    d = ImageDraw.Draw(dummy)
+    bbox = d.textbbox((0, 0), text, font=font)
+    pad_x, pad_y = 34, 16
+    w = bbox[2] - bbox[0] + pad_x * 2
+    h = bbox[3] - bbox[1] + pad_y * 2
+
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, w, h], fill=(210, 20, 20, 255))
+    # small white square "on-air" dot for extra news feel
+    dot_r = 8
+    d.ellipse([pad_x - 26, h // 2 - dot_r, pad_x - 26 + dot_r * 2, h // 2 + dot_r], fill="white")
+    d.text((pad_x, pad_y - 4), text, font=font, fill="white")
+    return img
+
+
+def make_vignette(w, h, top=True, strength=140):
+    """Soft dark gradient at the outer edge of a panel, so overlaid text/badges pop."""
+    grad = Image.new("L", (1, h), 0)
+    for y in range(h):
+        # fade from dark (edge) to transparent (center)
+        d = y / h if top else 1 - (y / h)
+        alpha = int(strength * max(0, 1 - d * 3))
+        grad.putpixel((0, y), alpha)
+    grad = grad.resize((w, h))
+    overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    overlay.putalpha(grad)
+    black = Image.new("RGBA", (w, h), (0, 0, 0, 255))
+    black.putalpha(grad)
+    return black
 
 
 def make_watermark(text, font_path, size=34):
@@ -112,12 +159,35 @@ def _kenburns_clip(image_path, target_w, target_h, duration, zoom_in=True):
 
     def zoom(t):
         progress = t / duration
-        factor = (1.0 + 0.08 * progress) if zoom_in else (1.08 - 0.08 * progress)
+        factor = (1.0 + 0.18 * progress) if zoom_in else (1.18 - 0.18 * progress)
         return factor
 
     clip = clip.resize(lambda t: zoom(t))
     clip = clip.set_position(("center", "center")).set_duration(duration)
     return clip
+
+
+def _pulsing_border_clip(w, h, duration, thickness=14):
+    """Thin red frame around the whole video, pulsing in/out like a news alert."""
+    def make_frame(t):
+        # sine pulse between ~40% and 100% opacity
+        alpha = 0.4 + 0.6 * (0.5 + 0.5 * np.sin(t * 6))
+        frame = np.zeros((h, w, 3), dtype=np.uint8)
+        frame[:, :, 0] = 210  # red channel
+        return frame
+
+    def make_mask(t):
+        alpha = 0.35 + 0.55 * (0.5 + 0.5 * np.sin(t * 6))
+        mask = np.zeros((h, w), dtype=np.float64)
+        mask[:thickness, :] = alpha
+        mask[-thickness:, :] = alpha
+        mask[:, :thickness] = alpha
+        mask[:, -thickness:] = alpha
+        return mask
+
+    color_clip = VideoClip(make_frame, duration=duration)
+    mask_clip = VideoClip(make_mask, duration=duration, ismask=True)
+    return color_clip.set_mask(mask_clip)
 
 
 def render_short(top_image_path, bottom_image_path, title, summary,
@@ -148,6 +218,23 @@ def render_short(top_image_path, bottom_image_path, title, summary,
         size=(W, BOTTOM_H)
     ).set_duration(DURATION).set_position((0, H - BOTTOM_H))
 
+    # ---- Vignettes: soft dark gradient at the outer edge of each image panel ----
+    top_vignette_img = make_vignette(W, 120, top=True)
+    top_vignette_path = "/tmp/_vignette_top.png"
+    top_vignette_img.save(top_vignette_path)
+    top_vignette = ImageClip(top_vignette_path).set_duration(DURATION).set_position((0, 0))
+
+    bottom_vignette_img = make_vignette(W, 120, top=False)
+    bottom_vignette_path = "/tmp/_vignette_bottom.png"
+    bottom_vignette_img.save(bottom_vignette_path)
+    bottom_vignette = ImageClip(bottom_vignette_path).set_duration(DURATION).set_position((0, H - 120))
+
+    # ---- Breaking-news style red badge, top-left over the top image ----
+    badge_img = make_breaking_badge(font_path)
+    badge_path = "/tmp/_badge.png"
+    badge_img.save(badge_path)
+    badge_clip = ImageClip(badge_path).set_duration(DURATION).set_position((30, 90))
+
     # ---- Watermarks ----
     wm_img = make_watermark(channel_name, font_path)
     wm_path = "/tmp/_watermark.png"
@@ -160,9 +247,13 @@ def render_short(top_image_path, bottom_image_path, title, summary,
                  .set_duration(DURATION)
                  .set_position(("center", H - wm_img.height - 30)))
 
+    # ---- Pulsing red alert border around the whole frame ----
+    border_clip = _pulsing_border_clip(W, H, DURATION)
+
     # ---- Compose everything ----
     final = CompositeVideoClip(
-        [top_bg, bottom_bg, mid_clip, wm_top, wm_bottom],
+        [top_bg, bottom_bg, top_vignette, bottom_vignette, mid_clip,
+         badge_clip, wm_top, wm_bottom, border_clip],
         size=(W, H)
     ).set_duration(DURATION)
 
