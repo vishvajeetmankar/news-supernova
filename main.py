@@ -16,6 +16,11 @@ import sys
 import tempfile
 import traceback
 
+# Force safe UTF-8 output so a stray corrupted character anywhere in a news
+# title/summary can never crash the logger and hide the real error.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from fetch_news import get_trending_story
@@ -73,6 +78,8 @@ if __name__ == "__main__":
     try:
         run_once()
     except Exception:
-        print("PIPELINE FAILED ❌")
+        print("PIPELINE FAILED ❌", flush=True)
         traceback.print_exc()
+        sys.stdout.flush()
+        sys.stderr.flush()
         sys.exit(1)
