@@ -21,22 +21,31 @@ from moviepy.editor import (
 
 W, H = 1080, 1920
 DURATION = 5
-TOP_H = 700
-BOTTOM_H = 700
-MID_H = H - TOP_H - BOTTOM_H  # 520
+TOP_H = 650
+BOTTOM_H = 650
+MID_H = H - TOP_H - BOTTOM_H  # 620
 
-FONT_URL = "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansdevanagari/NotoSansDevanagari%5Bwdth%2Cwght%5D.ttf"
+FONT_URL = "https://raw.githubusercontent.com/google/fonts/main/ofl/hind/Hind-Bold.ttf"
 FONT_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
-FONT_PATH = os.path.join(FONT_DIR, "NotoSansDevanagari-Bold.ttf")
+FONT_PATH = os.path.join(FONT_DIR, "Hind-Bold.ttf")
+
+
+FALLBACK_FONT_URL = "https://raw.githubusercontent.com/google/fonts/main/ofl/notosansdevanagari/NotoSansDevanagari%5Bwdth%2Cwght%5D.ttf"
 
 
 def ensure_font():
     os.makedirs(FONT_DIR, exist_ok=True)
     if not os.path.exists(FONT_PATH):
-        r = requests.get(FONT_URL, timeout=60)
-        r.raise_for_status()
-        with open(FONT_PATH, "wb") as f:
-            f.write(r.content)
+        try:
+            r = requests.get(FONT_URL, timeout=60)
+            r.raise_for_status()
+            with open(FONT_PATH, "wb") as f:
+                f.write(r.content)
+        except Exception:
+            r = requests.get(FALLBACK_FONT_URL, timeout=60)
+            r.raise_for_status()
+            with open(FONT_PATH, "wb") as f:
+                f.write(r.content)
     return FONT_PATH
 
 
@@ -76,22 +85,31 @@ def _wrapped_text_image(text, font_path, font_size, max_width, fill, bg=None,
 
 
 def make_middle_panel(title, summary, font_path):
-    """Solid RED news band: white bold title on top, yellow bold summary below (KK-News style)."""
+    """Solid RED news band: white bold title on top, yellow bold summary below (KK-News style).
+    Font size auto-shrinks so long titles never get cut off."""
     title = (title or "आज की बड़ी खबर").strip()
     summary = (summary or "इस खबर से जुड़ी महत्वपूर्ण जानकारी सामने आई है।").strip()
 
     panel = Image.new("RGB", (W, MID_H), (196, 20, 20))  # solid news-red band
 
-    title_img = _wrapped_text_image(
-        title, font_path, 66, W - 70, fill="white",
-        stroke_width=3, stroke_fill=(90, 0, 0)
-    )
-    summary_img = _wrapped_text_image(
-        summary, font_path, 42, W - 110, fill=(255, 221, 0),
-        stroke_width=2, stroke_fill=(80, 40, 0)
-    )
+    title_size, summary_size = 68, 40
+    max_available_h = MID_H - 40  # leave breathing room top/bottom
 
-    total_h = title_img.height + 20 + summary_img.height
+    while True:
+        title_img = _wrapped_text_image(
+            title, font_path, title_size, W - 70, fill="white",
+            stroke_width=3, stroke_fill=(90, 0, 0)
+        )
+        summary_img = _wrapped_text_image(
+            summary, font_path, summary_size, W - 110, fill=(255, 221, 0),
+            stroke_width=2, stroke_fill=(80, 40, 0)
+        )
+        total_h = title_img.height + 20 + summary_img.height
+        if total_h <= max_available_h or title_size <= 34:
+            break
+        title_size -= 4
+        summary_size -= 2
+
     start_y = max(6, (MID_H - total_h) // 2)
 
     panel.paste(title_img, ((W - title_img.width) // 2, start_y), title_img)
@@ -101,11 +119,11 @@ def make_middle_panel(title, summary, font_path):
 
 def make_breaking_badge(font_path, text="ब्रेकिंग न्यूज़"):
     """Red 'BREAKING NEWS' style ribbon badge, TV-news style - big and bold."""
-    font = ImageFont.truetype(font_path, 58)
+    font = ImageFont.truetype(font_path, 62)
     dummy = Image.new("RGBA", (10, 10))
     d = ImageDraw.Draw(dummy)
     bbox = d.textbbox((0, 0), text, font=font, stroke_width=3)
-    pad_x, pad_y = 46, 22
+    pad_x, pad_y = 48, 24
     w = bbox[2] - bbox[0] + pad_x * 2
     h = bbox[3] - bbox[1] + pad_y * 2
 
@@ -113,8 +131,8 @@ def make_breaking_badge(font_path, text="ब्रेकिंग न्यू�
     d = ImageDraw.Draw(img)
     d.rectangle([0, 0, w, h], fill=(215, 15, 15, 255))
     # small white square "on-air" dot for extra news feel
-    dot_r = 11
-    d.ellipse([pad_x - 32, h // 2 - dot_r, pad_x - 32 + dot_r * 2, h // 2 + dot_r], fill="white")
+    dot_r = 12
+    d.ellipse([pad_x - 34, h // 2 - dot_r, pad_x - 34 + dot_r * 2, h // 2 + dot_r], fill="white")
     d.text((pad_x, pad_y - 8), text, font=font, fill="white",
            stroke_width=3, stroke_fill=(110, 0, 0))
     return img
@@ -138,8 +156,8 @@ def make_vignette(w, h, top=True, strength=140):
 
 def make_logo_badge(font_path, line1="NEWS", line2="SUPERNOVA"):
     """Channel logo bug: solid red box, bold white two-line text (like a TV news channel logo)."""
-    font1 = ImageFont.truetype(font_path, 30)
-    font2 = ImageFont.truetype(font_path, 26)
+    font1 = ImageFont.truetype(font_path, 36)
+    font2 = ImageFont.truetype(font_path, 30)
     dummy = Image.new("RGBA", (10, 10))
     d = ImageDraw.Draw(dummy)
 
@@ -148,7 +166,7 @@ def make_logo_badge(font_path, line1="NEWS", line2="SUPERNOVA"):
     w1, h1 = b1[2] - b1[0], b1[3] - b1[1]
     w2, h2 = b2[2] - b2[0], b2[3] - b2[1]
 
-    pad_x, pad_y, gap = 26, 14, 4
+    pad_x, pad_y, gap = 28, 16, 4
     w = max(w1, w2) + pad_x * 2
     h = h1 + h2 + gap + pad_y * 2
 
@@ -161,6 +179,23 @@ def make_logo_badge(font_path, line1="NEWS", line2="SUPERNOVA"):
            stroke_width=2, stroke_fill=(110, 0, 0))
     d.text(((w - w2) // 2, pad_y + h1 + gap - 2), line2, font=font2, fill="white",
            stroke_width=1, stroke_fill=(110, 0, 0))
+    return img
+
+
+def make_ghost_watermark(font_path, text="NEWS SUPERNOVA", font_size=46, opacity=55):
+    """Large, low-opacity watermark text - the classic 'anti-copy' news watermark look."""
+    font = ImageFont.truetype(font_path, font_size)
+    dummy = Image.new("RGBA", (10, 10))
+    d = ImageDraw.Draw(dummy)
+    bbox = d.textbbox((0, 0), text, font=font, stroke_width=1)
+    pad = 20
+    w = bbox[2] - bbox[0] + pad * 2
+    h = bbox[3] - bbox[1] + pad * 2
+
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.text((pad, pad - 4), text, font=font, fill=(255, 255, 255, opacity),
+           stroke_width=1, stroke_fill=(255, 255, 255, opacity))
     return img
 
 
