@@ -33,16 +33,24 @@ JSON object ke roop me sirf ye paanch string fields return karo, koi markdown, c
         model=MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.8,
-        max_tokens=500,
+        max_tokens=900,  # Hindi text + 5 fields needs headroom; too low = truncated/broken JSON
     )
 
     text = (resp.choices[0].message.content or "").strip()
     text = text.replace("```json", "").replace("```", "").strip()
 
+    data = {}
     try:
         data = json.loads(text)
     except (json.JSONDecodeError, TypeError):
-        data = {}
+        # Model sometimes adds stray text before/after the JSON object -
+        # try to pull out just the {...} part and parse that instead.
+        start, end = text.find("{"), text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                data = json.loads(text[start:end + 1])
+            except (json.JSONDecodeError, TypeError):
+                data = {}
 
     title = str(data.get("title") or "").strip()
     summary = str(data.get("summary") or "").strip()
@@ -58,11 +66,12 @@ JSON object ke roop me sirf ye paanch string fields return karo, koi markdown, c
     tags = tags.encode("utf-8", errors="ignore").decode("utf-8")
     hashtags = hashtags.encode("utf-8", errors="ignore").decode("utf-8")
 
-    # Safety net: never let an empty/malformed AI response reach the video renderer
+    # Safety net: never let an empty/malformed AI response reach the video renderer.
+    # These fallbacks are derived FROM the story so they're never identical across videos.
     if not title:
         title = raw_title.strip()[:90] or "आज की बड़ी खबर"
     if not summary:
-        summary = "इस खबर से जुड़ी महत्वपूर्ण जानकारी सामने आई है। पूरी जानकारी वीडियो में।"
+        summary = f"{raw_title.strip()[:120]} — पूरी जानकारी और ताज़ा अपडेट वीडियो में देखें।"
     if not image_keywords:
         image_keywords = "india news"
     if not tags:
