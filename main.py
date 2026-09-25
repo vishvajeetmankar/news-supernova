@@ -4,8 +4,10 @@ Full pipeline, run manually OR by GitHub Actions cron:
   1. Fetch a fresh trending headline (free RSS)
   2. Rewrite it in masaledar Hindi (Groq, free)
   3. Get one AI image (Pollinations, free) + one licensed stock image (Pexels, free)
-  4. Render 5-second vertical short with animation, Hindi text, watermark, music
-  5. Upload to YouTube (News Supernova channel)
+  4. Generate a free Hindi voice narration (gTTS) - this is what gives the video
+     real length (18-32s) instead of a bare 5-second text card
+  5. Render the vertical short with animation, Hindi text, watermark, narration + music
+  6. Upload to YouTube (News Supernova channel)
 
 Usage:
     python main.py
@@ -16,8 +18,6 @@ import sys
 import tempfile
 import traceback
 
-# Force safe UTF-8 output so a stray corrupted character anywhere in a news
-# title/summary can never crash the logger and hide the real error.
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 from fetch_news import get_trending_story
 from rewrite_news import rewrite_story
 from get_images import get_ai_image, get_stock_image
+from narration import generate_narration
 from render_video import render_short, pick_random_music
 from upload_youtube import upload_short
 
@@ -33,11 +34,11 @@ CHANNEL_NAME = os.environ.get("CHANNEL_NAME", "News Supernova")
 
 
 def run_once():
-    print("Step 1/5: fetching trending story...")
+    print("Step 1/6: fetching trending story...")
     story = get_trending_story()
     print("  ->", story["title"])
 
-    print("Step 2/5: rewriting with Groq...")
+    print("Step 2/6: rewriting with Groq...")
     rewritten = rewrite_story(story["title"])
     print("  -> title:", rewritten["title"])
     print("  -> summary:", rewritten["summary"])
@@ -45,16 +46,25 @@ def run_once():
     with tempfile.TemporaryDirectory() as tmp:
         top_img = os.path.join(tmp, "top.jpg")
         bottom_img = os.path.join(tmp, "bottom.jpg")
+        narration_path = os.path.join(tmp, "narration.mp3")
         out_video = os.path.join(tmp, "short.mp4")
 
-        print("Step 3/5: fetching images...")
+        print("Step 3/6: fetching images...")
         get_ai_image(rewritten["image_keywords"], top_img)
         get_stock_image(rewritten["image_keywords"], bottom_img)
 
-        print("Step 4/5: rendering video...")
+        print("Step 4/6: generating Hindi voice narration...")
+        narration_text = f"{rewritten['title']}. {rewritten['summary']}"
+        try:
+            generate_narration(narration_text, narration_path)
+        except Exception as e:
+            print(f"  !! WARNING: narration failed ({e}) - video will have music only.")
+            narration_path = None
+
+        print("Step 5/6: rendering video...")
         music = pick_random_music()
         if not music:
-            print("  !! WARNING: no music file found in /music folder - uploading with silence.")
+            print("  !! WARNING: no music file found in /music folder - uploading with narration only.")
         render_short(
             top_image_path=top_img,
             bottom_image_path=bottom_img,
@@ -63,9 +73,10 @@ def run_once():
             music_path=music,
             channel_name=CHANNEL_NAME,
             out_path=out_video,
+            narration_path=narration_path,
         )
 
-        print("Step 5/5: uploading to YouTube...")
+        print("Step 6/6: uploading to YouTube...")
         tag_list = [t.strip() for t in rewritten["tags"].split(",") if t.strip()]
         video_id = upload_short(
             video_path=out_video,
