@@ -1,3 +1,6 @@
+# ============================================================
+# FILE: src/rewrite_news.py
+# ============================================================
 """
 Uses Groq's free API (very fast Llama models) to REWRITE the news headline in
 Claude's... err, in the model's own masaledar Hindi words, plus a punchy 2-3
@@ -43,6 +46,8 @@ JSON object ke roop me sirf ye paanch string fields return karo, koi markdown, c
     try:
         data = json.loads(text)
     except (json.JSONDecodeError, TypeError):
+        # Model sometimes adds stray text before/after the JSON object -
+        # try to pull out just the {...} part and parse that instead.
         start, end = text.find("{"), text.rfind("}")
         if start != -1 and end != -1 and end > start:
             try:
@@ -56,12 +61,16 @@ JSON object ke roop me sirf ye paanch string fields return karo, koi markdown, c
     tags = str(data.get("tags") or "").strip()
     hashtags = str(data.get("hashtags") or "").strip()
 
+    # Strip any invalid/undecodable characters (defends against corrupted
+    # source text or odd model output reaching the video renderer)
     title = title.encode("utf-8", errors="ignore").decode("utf-8")
     summary = summary.encode("utf-8", errors="ignore").decode("utf-8")
     image_keywords = image_keywords.encode("utf-8", errors="ignore").decode("utf-8")
     tags = tags.encode("utf-8", errors="ignore").decode("utf-8")
     hashtags = hashtags.encode("utf-8", errors="ignore").decode("utf-8")
 
+    # Safety net: never let an empty/malformed AI response reach the video renderer.
+    # These fallbacks are derived FROM the story so they're never identical across videos.
     if not title:
         title = raw_title.strip()[:90] or "आज की बड़ी खबर"
     if not summary:
