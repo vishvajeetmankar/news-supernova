@@ -1,8 +1,12 @@
+# ============================================================
+# FILE: .github/workflows/shorts_automation.yml
+# ============================================================
 name: News Supernova - Auto Shorts
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch: {}   # <-- lets YOU click "Run workflow" anytime to test manually
   schedule:
+    # All times UTC. IST = UTC + 5:30
     - cron: "30 3 * * *"   # 9:00 AM IST
     - cron: "45 3 * * *"   # 9:15 AM IST
     - cron: "0 4 * * *"    # 9:30 AM IST
@@ -47,6 +51,7 @@ jobs:
           PYTHONIOENCODING: "utf-8"
         run: python -u main.py
 
+      # Saves used_titles.json back to the repo so tomorrow's run doesn't repeat stories
       - name: Commit updated dedup log
         run: |
           git config user.name "news-supernova-bot"
