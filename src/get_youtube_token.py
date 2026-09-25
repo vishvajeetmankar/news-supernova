@@ -1,3 +1,6 @@
+# ============================================================
+# FILE: src/get_youtube_token.py
+# ============================================================
 """
 RUN THIS ONLY ONCE, ON YOUR OWN COMPUTER (not in GitHub Actions).
 It opens a browser, asks you to log into the Google account that owns your
