@@ -1,12 +1,18 @@
+# ============================================================
+# FILE: src/render_video.py
+# ============================================================
 """
-Builds the final 1080x1920, 5-second YouTube Short:
+Builds the final 1080x1920 YouTube Short. Duration is now DYNAMIC - it's set
+by how long the Hindi voice narration runs (roughly 18-32 seconds), not a
+fixed 5 seconds. Very short Shorts get almost no algorithmic distribution in
+2026, so the narration is what gives the video real length and real content.
 
-  [ TOP IMAGE   - subtle Ken Burns zoom/pan animation ]   <- watermark text overlaid
-  [ WHITE STRIP - bold black Hindi title + summary   ]
-  [ BOTTOM IMAGE- subtle Ken Burns zoom/pan animation ]   <- watermark text overlaid
+  [ TOP IMAGE   - Ken Burns zoom/pan animation, full narration length ]
+  [ RED BAND    - bold white Hindi title + yellow summary            ]
+  [ BOTTOM IMAGE- Ken Burns zoom/pan animation, full narration length ]
 
-Background music: a random royalty-free track from /music, trimmed to 5s
-starting at a random point.
+Audio = Hindi narration (full volume) + royalty-free background music
+(ducked to low volume underneath it).
 """
 
 import os
@@ -16,14 +22,19 @@ import numpy as np
 import requests
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from moviepy.editor import (
-    ImageClip, CompositeVideoClip, AudioFileClip, VideoClip, concatenate_videoclips
+    ImageClip, CompositeVideoClip, AudioFileClip, VideoClip,
+    CompositeAudioClip, concatenate_videoclips, concatenate_audioclips
 )
+from moviepy.audio.fx.all import volumex
 
 W, H = 1080, 1920
-DURATION = 5
 TOP_H = 650
 BOTTOM_H = 650
 MID_H = H - TOP_H - BOTTOM_H  # 620
+
+MIN_DURATION = 18.0   # floor - anything shorter gets almost no Shorts distribution in 2026
+MAX_DURATION = 32.0   # ceiling - keeps render time and file size sane
+NARRATION_TAIL = 1.8  # extra seconds after narration ends, so it doesn't feel cut off
 
 FONT_URL = "https://raw.githubusercontent.com/google/fonts/main/ofl/hind/Hind-Bold.ttf"
 FONT_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
@@ -265,7 +276,7 @@ def _breathing_clip(image_path, w, h, duration, amp=0.035, freq=2.2):
 
 
 def render_short(top_image_path, bottom_image_path, title, summary,
-                  music_path, channel_name, out_path):
+                  music_path, channel_name, out_path, narration_path=None):
     for path in (top_image_path, bottom_image_path):
         if not os.path.isfile(path) or os.path.getsize(path) == 0:
             raise RuntimeError(f"Invalid image file: {path}")
@@ -275,39 +286,48 @@ def render_short(top_image_path, bottom_image_path, title, summary,
 
     font_path = ensure_font()
 
+    # ---- Figure out the real video length from the narration's length ----
+    narration_audio = None
+    if narration_path and os.path.exists(narration_path) and os.path.getsize(narration_path) > 0:
+        narration_audio = AudioFileClip(narration_path)
+        duration = narration_audio.duration + NARRATION_TAIL
+    else:
+        duration = MIN_DURATION
+    duration = max(MIN_DURATION, min(MAX_DURATION, duration))
+
     # ---- Middle white text panel (with a subtle breathing pulse) ----
     mid_img = make_middle_panel(title, summary, font_path)
     mid_path = "/tmp/_mid_panel.png"
     mid_img.save(mid_path)
-    mid_clip = _breathing_clip(mid_path, W, MID_H, DURATION).set_position((0, TOP_H))
+    mid_clip = _breathing_clip(mid_path, W, MID_H, duration).set_position((0, TOP_H))
 
     # ---- Top & bottom animated image panels (cropped into their boxes) ----
     top_bg = CompositeVideoClip(
-        [_kenburns_clip(top_image_path, W, TOP_H, DURATION, zoom_in=True)],
+        [_kenburns_clip(top_image_path, W, TOP_H, duration, zoom_in=True)],
         size=(W, TOP_H)
-    ).set_duration(DURATION).set_position((0, 0))
+    ).set_duration(duration).set_position((0, 0))
 
     bottom_bg = CompositeVideoClip(
-        [_kenburns_clip(bottom_image_path, W, BOTTOM_H, DURATION, zoom_in=False)],
+        [_kenburns_clip(bottom_image_path, W, BOTTOM_H, duration, zoom_in=False)],
         size=(W, BOTTOM_H)
-    ).set_duration(DURATION).set_position((0, H - BOTTOM_H))
+    ).set_duration(duration).set_position((0, H - BOTTOM_H))
 
     # ---- Vignettes: soft dark gradient at the outer edge of each image panel ----
     top_vignette_img = make_vignette(W, 120, top=True)
     top_vignette_path = "/tmp/_vignette_top.png"
     top_vignette_img.save(top_vignette_path)
-    top_vignette = ImageClip(top_vignette_path).set_duration(DURATION).set_position((0, 0))
+    top_vignette = ImageClip(top_vignette_path).set_duration(duration).set_position((0, 0))
 
     bottom_vignette_img = make_vignette(W, 120, top=False)
     bottom_vignette_path = "/tmp/_vignette_bottom.png"
     bottom_vignette_img.save(bottom_vignette_path)
-    bottom_vignette = ImageClip(bottom_vignette_path).set_duration(DURATION).set_position((0, H - 120))
+    bottom_vignette = ImageClip(bottom_vignette_path).set_duration(duration).set_position((0, H - 120))
 
     # ---- Breaking-news style red badge, top-left over the top image (bigger, lower) ----
     badge_img = make_breaking_badge(font_path)
     badge_path = "/tmp/_badge.png"
     badge_img.save(badge_path)
-    badge_clip = ImageClip(badge_path).set_duration(DURATION).set_position((30, 160))
+    badge_clip = ImageClip(badge_path).set_duration(duration).set_position((30, 160))
 
     # ---- Channel logo badges (top-right and bottom-right), KK-News style ----
     words = channel_name.strip().upper().split(maxsplit=1)
@@ -319,34 +339,54 @@ def render_short(top_image_path, bottom_image_path, title, summary,
     logo_img.save(logo_path)
 
     wm_top = (ImageClip(logo_path)
-              .set_duration(DURATION)
+              .set_duration(duration)
               .set_position((W - logo_img.width - 30, 30)))
     wm_bottom = (ImageClip(logo_path)
-                 .set_duration(DURATION)
+                 .set_duration(duration)
                  .set_position((W - logo_img.width - 30, H - logo_img.height - 30)))
 
+    # ---- Large low-opacity "ghost" watermarks (2x) - extra anti-copy layer ----
+    ghost_img = make_ghost_watermark(font_path, channel_name.strip().upper())
+    ghost_path = "/tmp/_ghost.png"
+    ghost_img.save(ghost_path)
+    ghost_top = (ImageClip(ghost_path)
+                 .set_duration(duration)
+                 .set_position(("center", TOP_H - ghost_img.height - 40)))
+    ghost_bottom = (ImageClip(ghost_path)
+                    .set_duration(duration)
+                    .set_position(("center", H - BOTTOM_H + 40)))
+
     # ---- Pulsing red alert border around the whole frame ----
-    border_clip = _pulsing_border_clip(W, H, DURATION)
+    border_clip = _pulsing_border_clip(W, H, duration)
 
     # ---- Quick opening flash - grabs attention the instant it appears in feed ----
     flash_clip = _opening_flash_clip(W, H)
 
     # ---- Compose everything ----
     final = CompositeVideoClip(
-        [top_bg, bottom_bg, top_vignette, bottom_vignette, mid_clip,
-         badge_clip, wm_top, wm_bottom, border_clip, flash_clip],
+        [top_bg, bottom_bg, top_vignette, bottom_vignette, ghost_top, ghost_bottom,
+         mid_clip, badge_clip, wm_top, wm_bottom, border_clip, flash_clip],
         size=(W, H)
-    ).set_duration(DURATION)
+    ).set_duration(duration)
 
-    # ---- Background music: random 5s slice ----
+    # ---- Audio: Hindi narration (full volume) + background music (ducked underneath) ----
+    audio_tracks = []
+    if narration_audio is not None:
+        audio_tracks.append(narration_audio.set_start(0.2))
+
     if music_path and os.path.exists(music_path):
-        audio = AudioFileClip(music_path)
-        if audio.duration > DURATION:
-            start = random.uniform(0, audio.duration - DURATION)
-            audio = audio.subclip(start, start + DURATION)
+        music = AudioFileClip(music_path)
+        if music.duration >= duration:
+            start = random.uniform(0, music.duration - duration)
+            music = music.subclip(start, start + duration)
         else:
-            audio = audio.audio_loop(duration=DURATION) if hasattr(audio, "audio_loop") else audio
-        final = final.set_audio(audio)
+            loops_needed = int(duration // music.duration) + 1
+            music = concatenate_audioclips([music] * loops_needed).subclip(0, duration)
+        music = music.fx(volumex, 0.15)  # duck well under the narration
+        audio_tracks.append(music)
+
+    if audio_tracks:
+        final = final.set_audio(CompositeAudioClip(audio_tracks).set_duration(duration))
 
     final.write_videofile(
         out_path, fps=30, codec="libx264", audio_codec="aac",
