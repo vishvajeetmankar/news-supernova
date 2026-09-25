@@ -1,3 +1,6 @@
+# ============================================================
+# FILE: src/upload_youtube.py
+# ============================================================
 """
 Uploads the rendered short to YouTube using the free YouTube Data API v3 quota
 (10,000 units/day; one upload = ~1600 units, so ~6 uploads/day fit easily
@@ -24,6 +27,8 @@ def _get_service():
     if missing:
         raise RuntimeError("Missing YouTube OAuth environment variables: " + ", ".join(missing))
 
+    # .strip() defends against accidental leading/trailing spaces, quotes or
+    # newlines that sneak in when copy-pasting secrets into GitHub
     creds = Credentials(
         token=None,
         refresh_token=os.environ["YOUTUBE_REFRESH_TOKEN"].strip().strip('"').strip("'"),
@@ -53,16 +58,19 @@ def upload_short(video_path: str, title: str, description: str, tags=None,
 
     body = {
         "snippet": {
-            "title": title[:95] + " #shorts",
+            "title": title[:95] + " #shorts",   # YouTube title limit ~100 chars
             "description": description,
             "tags": tags or ["news", "shorts", "trending", "hindi news"],
-            "categoryId": "25",
+            "categoryId": "25",  # News & Politics
             "defaultLanguage": "hi",
             "defaultAudioLanguage": "hi",
         },
         "status": {
-            "privacyStatus": "public",
+            "privacyStatus": "public",   # change to "private" while testing if you prefer
             "selfDeclaredMadeForKids": False,
+            # One of the top two images per video is AI-generated and the topic is a
+            # real news story, so we disclose this by default. YouTube has confirmed
+            # this does NOT reduce reach/monetization - only NOT disclosing is risky.
             "containsSyntheticMedia": contains_synthetic_media,
         },
     }
