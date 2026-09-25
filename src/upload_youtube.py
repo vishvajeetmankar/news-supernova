@@ -24,8 +24,6 @@ def _get_service():
     if missing:
         raise RuntimeError("Missing YouTube OAuth environment variables: " + ", ".join(missing))
 
-    # .strip() defends against accidental leading/trailing spaces, quotes or
-    # newlines that sneak in when copy-pasting secrets into GitHub
     creds = Credentials(
         token=None,
         refresh_token=os.environ["YOUTUBE_REFRESH_TOKEN"].strip().strip('"').strip("'"),
@@ -49,19 +47,23 @@ def _get_service():
     return build("youtube", "v3", credentials=creds)
 
 
-def upload_short(video_path: str, title: str, description: str, tags=None):
+def upload_short(video_path: str, title: str, description: str, tags=None,
+                  contains_synthetic_media: bool = True):
     youtube = _get_service()
 
     body = {
         "snippet": {
-            "title": title[:95] + " #shorts",   # YouTube title limit ~100 chars
+            "title": title[:95] + " #shorts",
             "description": description,
             "tags": tags or ["news", "shorts", "trending", "hindi news"],
-            "categoryId": "25",  # News & Politics
+            "categoryId": "25",
+            "defaultLanguage": "hi",
+            "defaultAudioLanguage": "hi",
         },
         "status": {
-            "privacyStatus": "public",   # change to "private" while testing if you prefer
+            "privacyStatus": "public",
             "selfDeclaredMadeForKids": False,
+            "containsSyntheticMedia": contains_synthetic_media,
         },
     }
 
