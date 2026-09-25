@@ -1,3 +1,6 @@
+# ============================================================
+# FILE: src/get_images.py
+# ============================================================
 """
 Two images per short:
   1. TOP image    -> AI-generated via Pollinations.ai (100% free, no API key, no login)
