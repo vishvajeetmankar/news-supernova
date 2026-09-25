@@ -23,7 +23,7 @@ Isko dekh kar (verbatim copy MAT karna, apne alfaazon me likhna):
 2. Uska 2-3 line ka summary Hindi me likh jo curiosity create kare.
 3. 3-4 simple ENGLISH keywords do jo is news se related generic stock-photo search ke liye use ho sakein (jaise "stock market crash graph" ya "cricket stadium celebration") - koi real person ka naam mat daalna.
 4. 8-10 YouTube SEO tags do (comma-separated ek hi string me), is specific news topic se directly related - jaise agar news kisi desh/vyakti/ghatna ke baare me hai to uske naam/topic wale tags do, generic "news" jaisे tags kam rakho.
-5. 5-6 hashtags do (space-separated ek hi string me, # ke saath), isi news topic se related, jaise #IranNews #Khamenei waghera jaisa specific - generic ke saath specific bhi mix karo.
+5. 3 hashtags do (space-separated ek hi string me, # ke saath), isi news topic se sabse zyada related - jaise #IranNews #Khamenei waghera jaisa specific. Sirf 3 hi do, zyada mat do.
 
 JSON object ke roop me sirf ye paanch string fields return karo, koi markdown, code fence ya extra text mat do:
 {{"title": "...", "summary": "...", "image_keywords": "...", "tags": "...", "hashtags": "..."}}
@@ -43,8 +43,6 @@ JSON object ke roop me sirf ye paanch string fields return karo, koi markdown, c
     try:
         data = json.loads(text)
     except (json.JSONDecodeError, TypeError):
-        # Model sometimes adds stray text before/after the JSON object -
-        # try to pull out just the {...} part and parse that instead.
         start, end = text.find("{"), text.rfind("}")
         if start != -1 and end != -1 and end > start:
             try:
@@ -58,16 +56,12 @@ JSON object ke roop me sirf ye paanch string fields return karo, koi markdown, c
     tags = str(data.get("tags") or "").strip()
     hashtags = str(data.get("hashtags") or "").strip()
 
-    # Strip any invalid/undecodable characters (defends against corrupted
-    # source text or odd model output reaching the video renderer)
     title = title.encode("utf-8", errors="ignore").decode("utf-8")
     summary = summary.encode("utf-8", errors="ignore").decode("utf-8")
     image_keywords = image_keywords.encode("utf-8", errors="ignore").decode("utf-8")
     tags = tags.encode("utf-8", errors="ignore").decode("utf-8")
     hashtags = hashtags.encode("utf-8", errors="ignore").decode("utf-8")
 
-    # Safety net: never let an empty/malformed AI response reach the video renderer.
-    # These fallbacks are derived FROM the story so they're never identical across videos.
     if not title:
         title = raw_title.strip()[:90] or "आज की बड़ी खबर"
     if not summary:
@@ -77,7 +71,7 @@ JSON object ke roop me sirf ye paanch string fields return karo, koi markdown, c
     if not tags:
         tags = "news, breaking news, trending news, india news, hindi news"
     if not hashtags:
-        hashtags = "#news #breakingnews #trending #shorts #viral"
+        hashtags = "#news #breakingnews #shorts"
 
     return {
         "title": title,
