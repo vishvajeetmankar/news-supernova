@@ -1,3 +1,6 @@
+# ============================================================
+# FILE: main.py
+# ============================================================
 """
 Full pipeline, run manually OR by GitHub Actions cron:
 
@@ -18,6 +21,8 @@ import sys
 import tempfile
 import traceback
 
+# Force safe UTF-8 output so a stray corrupted character anywhere in a news
+# title/summary can never crash the logger and hide the real error.
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
