@@ -1,6 +1,3 @@
-# ============================================================
-# FILE: src/upload_youtube.py
-# ============================================================
 """
 Uploads the rendered short to YouTube using the free YouTube Data API v3 quota
 (10,000 units/day; one upload = ~1600 units, so ~6 uploads/day fit easily
