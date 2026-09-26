@@ -1,6 +1,3 @@
-# ============================================================
-# FILE: src/narration.py
-# ============================================================
 """
 Generates a free Hindi voice narration for the short using gTTS (a free,
 keyless wrapper around Google Translate's text-to-speech engine).
