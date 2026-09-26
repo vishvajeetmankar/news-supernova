@@ -1,6 +1,3 @@
-# ============================================================
-# FILE: src/fetch_news.py
-# ============================================================
 """
 Fetches trending news headlines from FREE public RSS feeds (no API key needed).
 We rotate across a few different feeds/categories so 5 shorts a day don't repeat
