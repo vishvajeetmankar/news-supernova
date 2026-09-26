@@ -1,6 +1,3 @@
-# ============================================================
-# FILE: src/rewrite_news.py
-# ============================================================
 """
 Uses Groq's free API (very fast Llama models) to REWRITE the news headline in
 Claude's... err, in the model's own masaledar Hindi words, plus a punchy 2-3
@@ -22,10 +19,10 @@ def rewrite_story(raw_title: str) -> dict:
 {json.dumps(raw_title, ensure_ascii=False)}
 
 Isko dekh kar (verbatim copy MAT karna, apne alfaazon me likhna):
-1. Ek naya, masaledar, catchy Hindi title bana jo YouTube Short ke liye ek highlight jaisa lage. Max 8-9 words.
-2. Uska 2-3 line ka summary Hindi me likh jo curiosity create kare.
+1. Ek naya, masaledar, catchy Hindi title bana jo YouTube Short ke liye ek highlight jaisa lage. 8-9 words mein.
+2. Uska summary Hindi me likh jo curiosity create kare - LAMBAI bahut important hai: 35-45 words ke beech mein rakho (na chota na bada), kyunki ye video ke voiceover me bola jayega aur video ki length isi par depend karti hai. Bahut chota summary video ko khaali/boring bana dega.
 3. 3-4 simple ENGLISH keywords do jo is news se related generic stock-photo search ke liye use ho sakein (jaise "stock market crash graph" ya "cricket stadium celebration") - koi real person ka naam mat daalna.
-4. 8-10 YouTube SEO tags do (comma-separated ek hi string me), is specific news topic se directly related - jaise agar news kisi desh/vyakti/ghatna ke baare me hai to uske naam/topic wale tags do, generic "news" jaisे tags kam rakho.
+4. 8-10 YouTube SEO tags do (comma-separated ek hi string me), is specific news topic se directly related - jaise agar news kisi desh/vyakti/ghatna ke baare me hai to uske naam/topic wale tags do, generic "news" jaise tags kam rakho.
 5. 3 hashtags do (space-separated ek hi string me, # ke saath), isi news topic se sabse zyada related - jaise #IranNews #Khamenei waghera jaisa specific. Sirf 3 hi do, zyada mat do.
 
 JSON object ke roop me sirf ye paanch string fields return karo, koi markdown, code fence ya extra text mat do:
