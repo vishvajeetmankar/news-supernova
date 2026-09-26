@@ -1,18 +1,21 @@
-# ============================================================
-# FILE: src/render_video.py
-# ============================================================
 """
-Builds the final 1080x1920 YouTube Short. Duration is now DYNAMIC - it's set
-by how long the Hindi voice narration runs (roughly 18-32 seconds), not a
-fixed 5 seconds. Very short Shorts get almost no algorithmic distribution in
-2026, so the narration is what gives the video real length and real content.
+Builds the final 1080x1920 YouTube Short, targeted at 18-20 seconds.
+Duration is fit to the Hindi narration WITHOUT ever cutting it off mid-word
+and WITHOUT leaving dead silence: if the narration runs long/short, its
+speed is gently nudged (never enough to sound unnatural) so the full
+sentence always fits inside the target window.
 
-  [ TOP IMAGE   - Ken Burns zoom/pan animation, full narration length ]
-  [ RED BAND    - bold white Hindi title + yellow summary            ]
-  [ BOTTOM IMAGE- Ken Burns zoom/pan animation, full narration length ]
+  [ TOP IMAGE   - Ken Burns zoom/pan animation, full video length ]
+  [ RED BAND    - bold white Hindi HEADLINE, animated pop-in;
+                   yellow CAPTION line right under it            ]
+  [ BOTTOM IMAGE- Ken Burns zoom/pan animation, full video length ]
 
-Audio = Hindi narration (full volume) + royalty-free background music
-(ducked to low volume underneath it).
+Motion graphics: headline "pops in" with an overshoot-ease animation,
+the breaking-news badge slides in from off-screen, and the logo/watermark
+badges fade in staggered - nothing just snaps onto screen instantly.
+
+Audio = Hindi narration (full volume, time-fit) + royalty-free background
+music (ducked to low volume underneath it).
 """
 
 import os
@@ -26,15 +29,18 @@ from moviepy.editor import (
     CompositeAudioClip, concatenate_videoclips, concatenate_audioclips
 )
 from moviepy.audio.fx.all import volumex
+from moviepy.video.fx.all import speedx
 
 W, H = 1080, 1920
 TOP_H = 650
 BOTTOM_H = 650
 MID_H = H - TOP_H - BOTTOM_H  # 620
 
-MIN_DURATION = 18.0   # floor - anything shorter gets almost no Shorts distribution in 2026
-MAX_DURATION = 32.0   # ceiling - keeps render time and file size sane
-NARRATION_TAIL = 1.8  # extra seconds after narration ends, so it doesn't feel cut off
+TARGET_MIN = 18.0     # target video length window, as requested
+TARGET_MAX = 20.5
+NARRATION_TAIL = 1.2  # buffer after narration ends before the video cuts
+MAX_SPEED_UP = 1.22   # cap on how much we'll speed up narration (stays natural-sounding)
+MAX_SLOW_DOWN = 0.88  # cap on how much we'll slow it down
 
 FONT_URL = "https://raw.githubusercontent.com/google/fonts/main/ofl/hind/Hind-Bold.ttf"
 FONT_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
@@ -263,16 +269,94 @@ def _opening_flash_clip(w, h, flash_duration=0.15):
     return color_clip.set_mask(mask_clip)
 
 
-def _breathing_clip(image_path, w, h, duration, amp=0.035, freq=2.2):
-    """Very subtle pulse/breathing zoom so the text panel feels alive, not static."""
-    clip = ImageClip(image_path)
-    clip = clip.resize((w, h))
+def _fit_narration_to_window(narration_audio, target_min=TARGET_MIN, target_max=TARGET_MAX,
+                              tail=NARRATION_TAIL):
+    """Never cuts the narration mid-sentence and never leaves dead silence:
+    nudges playback speed (capped so it still sounds natural) until the
+    narration + tail lands inside [target_min, target_max]."""
+    content_max = target_max - tail
+    content_min = target_min - tail
+    dur = narration_audio.duration
 
-    def scale(t):
-        return 1.0 + amp * (0.5 + 0.5 * np.sin(t * freq * 2 * np.pi))
+    if dur > content_max:
+        speed = min(dur / content_max, MAX_SPEED_UP)
+        narration_audio = narration_audio.fx(speedx, speed)
+    elif dur < content_min:
+        speed = max(dur / content_min, MAX_SLOW_DOWN)
+        narration_audio = narration_audio.fx(speedx, speed)
 
-    clip = clip.resize(lambda t: scale(t)).set_position(("center", "center")).set_duration(duration)
-    return CompositeVideoClip([clip], size=(w, h)).set_duration(duration)
+    return narration_audio
+
+
+def _fade_in_mask(clip, total_duration, fade_duration=0.3, delay=0.0):
+    """Attaches a time-varying fade-in alpha WITHOUT destroying the image's
+    own per-pixel transparency (combines with the existing mask instead of
+    replacing it - replacing it turns transparent PNGs into solid boxes)."""
+    w, h = clip.size
+    original_mask = clip.mask  # per-pixel alpha from the PNG, if any
+
+    def alpha_at(t):
+        tt = t - delay
+        if tt <= 0:
+            return 0.0
+        elif tt < fade_duration:
+            return tt / fade_duration
+        return 1.0
+
+    if original_mask is not None:
+        def mask_frame(t):
+            base = original_mask.get_frame(t)
+            return base * alpha_at(t)
+    else:
+        def mask_frame(t):
+            return np.full((h, w), alpha_at(t), dtype=np.float64)
+
+    mask_clip = VideoClip(mask_frame, duration=total_duration, ismask=True)
+    return clip.set_mask(mask_clip)
+
+
+def _pop_in_headline_clip(image_path, w, h, duration, pop_duration=0.45, amp=0.03, freq=2.2):
+    """Headline/caption panel 'pops in' with an overshoot-ease animation
+    (classic news-graphics motion), then settles into a subtle breathing loop.
+    Frames are built manually with PIL (not moviepy's chained resize inside
+    CompositeVideoClip, which freezes a size-animated clip at its t=0 size)."""
+    base_img = Image.open(image_path).convert("RGB").resize((w, h), Image.LANCZOS)
+
+    def scale_at(t):
+        if t < pop_duration:
+            progress = t / pop_duration
+            eased = 1 - (1 - progress) ** 3  # ease-out cubic
+            s = 0.72 + 0.33 * eased          # 0.72 -> 1.05 (slight overshoot)
+            if progress > 0.75:
+                settle = (progress - 0.75) / 0.25
+                s -= 0.05 * settle           # settle 1.05 -> 1.0
+            return s
+        tt = t - pop_duration
+        return 1.0 + amp * (0.5 + 0.5 * np.sin(tt * freq * 2 * np.pi))
+
+    def make_frame(t):
+        s = scale_at(t)
+        new_w, new_h = max(1, int(round(w * s))), max(1, int(round(h * s)))
+        resized = base_img.resize((new_w, new_h), Image.LANCZOS)
+        canvas = Image.new("RGB", (w, h), (0, 0, 0))
+        canvas.paste(resized, ((w - new_w) // 2, (h - new_h) // 2))
+        return np.array(canvas)
+
+    clip = VideoClip(make_frame, duration=duration)
+    return _fade_in_mask(clip, duration, fade_duration=pop_duration * 0.6)
+
+
+def _slide_in_position(target_x, target_y, slide_duration=0.4, from_dx=-400):
+    """Returns a set_position-compatible function: slides in from off-screen
+    to (target_x, target_y) with an ease-out ('motion graphics' style)."""
+    def pos(t):
+        if t < slide_duration:
+            progress = t / slide_duration
+            eased = 1 - (1 - progress) ** 3
+            x = (target_x + from_dx) + (-from_dx) * eased
+            return (x, target_y)
+        return (target_x, target_y)
+    return pos
 
 
 def render_short(top_image_path, bottom_image_path, title, summary,
@@ -286,20 +370,23 @@ def render_short(top_image_path, bottom_image_path, title, summary,
 
     font_path = ensure_font()
 
-    # ---- Figure out the real video length from the narration's length ----
+    # ---- Figure out video length: fit narration into the 18-20.5s window ----
     narration_audio = None
     if narration_path and os.path.exists(narration_path) and os.path.getsize(narration_path) > 0:
         narration_audio = AudioFileClip(narration_path)
+        narration_audio = _fit_narration_to_window(narration_audio)
+    if narration_audio is not None:
         duration = narration_audio.duration + NARRATION_TAIL
+        duration = max(TARGET_MIN, duration)
+        duration = min(duration, 26.0)  # generous absolute ceiling - only for pathological edge cases
     else:
-        duration = MIN_DURATION
-    duration = max(MIN_DURATION, min(MAX_DURATION, duration))
+        duration = TARGET_MIN
 
-    # ---- Middle white text panel (with a subtle breathing pulse) ----
+    # ---- Middle red text panel: HEADLINE pops in, CAPTION line right under it ----
     mid_img = make_middle_panel(title, summary, font_path)
     mid_path = "/tmp/_mid_panel.png"
     mid_img.save(mid_path)
-    mid_clip = _breathing_clip(mid_path, W, MID_H, duration).set_position((0, TOP_H))
+    mid_clip = _pop_in_headline_clip(mid_path, W, MID_H, duration).set_position((0, TOP_H))
 
     # ---- Top & bottom animated image panels (cropped into their boxes) ----
     top_bg = CompositeVideoClip(
@@ -323,13 +410,15 @@ def render_short(top_image_path, bottom_image_path, title, summary,
     bottom_vignette_img.save(bottom_vignette_path)
     bottom_vignette = ImageClip(bottom_vignette_path).set_duration(duration).set_position((0, H - 120))
 
-    # ---- Breaking-news style red badge, top-left over the top image (bigger, lower) ----
+    # ---- Breaking-news badge: SLIDES IN from the left (motion graphics) ----
     badge_img = make_breaking_badge(font_path)
     badge_path = "/tmp/_badge.png"
     badge_img.save(badge_path)
-    badge_clip = ImageClip(badge_path).set_duration(duration).set_position((30, 160))
+    badge_clip = (ImageClip(badge_path)
+                  .set_duration(duration)
+                  .set_position(_slide_in_position(30, 160, slide_duration=0.45)))
 
-    # ---- Channel logo badges (top-right and bottom-right), KK-News style ----
+    # ---- Channel logo badges (top-right and bottom-right), fade in staggered ----
     words = channel_name.strip().upper().split(maxsplit=1)
     logo_line1 = words[0] if words else "NEWS"
     logo_line2 = words[1] if len(words) > 1 else ""
@@ -338,23 +427,27 @@ def render_short(top_image_path, bottom_image_path, title, summary,
     logo_path = "/tmp/_logo.png"
     logo_img.save(logo_path)
 
-    wm_top = (ImageClip(logo_path)
-              .set_duration(duration)
-              .set_position((W - logo_img.width - 30, 30)))
-    wm_bottom = (ImageClip(logo_path)
-                 .set_duration(duration)
-                 .set_position((W - logo_img.width - 30, H - logo_img.height - 30)))
+    wm_top = _fade_in_mask(
+        ImageClip(logo_path).set_duration(duration).set_position((W - logo_img.width - 30, 30)),
+        duration, fade_duration=0.35, delay=0.15
+    )
+    wm_bottom = _fade_in_mask(
+        ImageClip(logo_path).set_duration(duration).set_position((W - logo_img.width - 30, H - logo_img.height - 30)),
+        duration, fade_duration=0.35, delay=0.25
+    )
 
-    # ---- Large low-opacity "ghost" watermarks (2x) - extra anti-copy layer ----
+    # ---- Large low-opacity "ghost" watermarks (2x), fade in later/softer ----
     ghost_img = make_ghost_watermark(font_path, channel_name.strip().upper())
     ghost_path = "/tmp/_ghost.png"
     ghost_img.save(ghost_path)
-    ghost_top = (ImageClip(ghost_path)
-                 .set_duration(duration)
-                 .set_position(("center", TOP_H - ghost_img.height - 40)))
-    ghost_bottom = (ImageClip(ghost_path)
-                    .set_duration(duration)
-                    .set_position(("center", H - BOTTOM_H + 40)))
+    ghost_top = _fade_in_mask(
+        ImageClip(ghost_path).set_duration(duration).set_position(("center", TOP_H - ghost_img.height - 40)),
+        duration, fade_duration=0.6, delay=0.5
+    )
+    ghost_bottom = _fade_in_mask(
+        ImageClip(ghost_path).set_duration(duration).set_position(("center", H - BOTTOM_H + 40)),
+        duration, fade_duration=0.6, delay=0.55
+    )
 
     # ---- Pulsing red alert border around the whole frame ----
     border_clip = _pulsing_border_clip(W, H, duration)
