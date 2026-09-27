@@ -1,5 +1,5 @@
 """
-Builds the final 1080x1920 YouTube Short, targeted at 18-20 seconds.
+Builds the final 1080x1920 YouTube Short, targeted at 18-21.5 seconds.
 Duration is fit to the Hindi narration WITHOUT ever cutting it off mid-word
 and WITHOUT leaving dead silence: if the narration runs long/short, its
 speed is gently nudged (never enough to sound unnatural) so the full
@@ -37,7 +37,7 @@ BOTTOM_H = 650
 MID_H = H - TOP_H - BOTTOM_H  # 620
 
 TARGET_MIN = 18.0     # target video length window, as requested
-TARGET_MAX = 20.5
+TARGET_MAX = 21.5     # slightly widened to comfortably fit hook + content + CTA
 NARRATION_TAIL = 1.2  # buffer after narration ends before the video cuts
 MAX_SPEED_UP = 1.22   # cap on how much we'll speed up narration (stays natural-sounding)
 MAX_SLOW_DOWN = 0.88  # cap on how much we'll slow it down
@@ -370,7 +370,7 @@ def render_short(top_image_path, bottom_image_path, title, summary,
 
     font_path = ensure_font()
 
-    # ---- Figure out video length: fit narration into the 18-20.5s window ----
+    # ---- Figure out video length: fit narration into the target window ----
     narration_audio = None
     if narration_path and os.path.exists(narration_path) and os.path.getsize(narration_path) > 0:
         narration_audio = AudioFileClip(narration_path)
