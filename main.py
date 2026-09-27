@@ -4,8 +4,9 @@ Full pipeline, run manually OR by GitHub Actions cron:
   1. Fetch a fresh trending headline (free RSS)
   2. Rewrite it in masaledar Hindi (Groq, free)
   3. Get one AI image (Pollinations, free) + one licensed stock image (Pexels, free)
-  4. Generate a free Hindi voice narration (gTTS) - this is what gives the video
-     real length (18-32s) instead of a bare 5-second text card
+  4. Generate a real-sounding Hindi voice narration (edge-tts, free) with a
+     random hook + subscribe-CTA style variant - this is what gives the video
+     real length (18-21.5s) and a professional anchor-style feel
   5. Render the vertical short with animation, Hindi text, watermark, narration + music
   6. Upload to YouTube (News Supernova channel)
 
@@ -55,12 +56,12 @@ def run_once():
         get_ai_image(rewritten["image_keywords"], top_img)
         get_stock_image(rewritten["image_keywords"], bottom_img)
 
-        print("Step 4/6: generating Hindi voice narration...")
-        narration_text = f"{rewritten['title']}. {rewritten['summary']}"
+        print("Step 4/6: generating Hindi voice narration (edge-tts)...")
         try:
-            generate_narration(narration_text, narration_path)
+            generate_narration(rewritten["title"], rewritten["summary"], narration_path,
+                                channel_name=CHANNEL_NAME)
         except Exception as e:
-            print(f"  !! WARNING: narration failed ({e}) - video will have music only.")
+            print(f"  !! WARNING: narration failed entirely ({e}) - video will have music only.")
             narration_path = None
 
         print("Step 5/6: rendering video...")
