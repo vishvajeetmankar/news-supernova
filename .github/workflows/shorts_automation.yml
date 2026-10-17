@@ -1,58 +1,61 @@
 name: News Supernova - Auto Shorts
-
 on:
-  workflow_dispatch: {}   # <-- lets YOU click "Run workflow" anytime to test manually
-  schedule:
-    # All times UTC. IST = UTC + 5:30
-    - cron: "30 3 * * *"   # 9:00 AM IST
-    - cron: "45 3 * * *"   # 9:15 AM IST
-    - cron: "0 4 * * *"    # 9:30 AM IST
-    - cron: "30 13 * * *"  # 7:00 PM IST
-    - cron: "45 13 * * *"  # 7:15 PM IST
-
+  schedule:   # IST 8:30, 8:45, 9:00, 18:30, 18:45 (video ~25-40 min baad publish hoga)
+    - cron: "0 3 * * *"
+    - cron: "15 3 * * *"
+    - cron: "30 3 * * *"
+    - cron: "0 13 * * *"
+    - cron: "15 13 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run: {description: "true = upload skip, sirf test", default: "true"}
+permissions: {contents: write}
 jobs:
-  make-and-upload-short:
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
+  run:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      FISH_API_KEY: ${{ secrets.FISH_API_KEY }}
+      FISH_VOICE_ID: ${{ secrets.FISH_VOICE_ID }}
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      GROQ_MODEL: openai/gpt-oss-120b
+      YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+      YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+      YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+      PYTHONUNBUFFERED: "1"
+      PYTHONIOENCODING: utf-8
+      ANCHOR_TIMEOUT: "3600"
+      DRY_RUN: ${{ github.event.inputs.dry_run }}
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.10"}
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto-core fonts-dejavu-core libraqm0 libfribidi0
+      - run: pip install -r requirements.txt
+      - id: xt
+        uses: actions/cache@v4
         with:
-          python-version: "3.11"
-
-      - name: Install ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
-      - name: Install Python dependencies
-        run: pip install -r requirements.txt
-
-      - name: Verify rendering tools
+          path: |
+            xtalker
+            .venv-xt
+          key: xt-v1-${{ runner.os }}
+      - name: Setup XTalker (sirf pehli baar)
+        if: steps.xt.outputs.cache-hit != 'true'
         run: |
-          which ffmpeg
-          ffmpeg -version
-          python -c "import PIL; print('Pillow OK')"
-
-      - name: Run the pipeline (fetch -> rewrite -> images -> render -> upload)
-        env:
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          GROQ_MODEL: openai/gpt-oss-120b
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
-          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
-          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
-          CHANNEL_NAME: "News Supernova"
-          PYTHONUNBUFFERED: "1"
-          PYTHONIOENCODING: "utf-8"
-        run: python -u main.py
-
-      # Saves used_titles.json back to the repo so tomorrow's run doesn't repeat stories
-      - name: Commit updated dedup log
+          git clone --depth 1 https://github.com/Spycsh/xtalker xtalker
+          python -m venv .venv-xt
+          .venv-xt/bin/pip install -q --upgrade pip
+          .venv-xt/bin/pip install -q -r xtalker/requirements.txt
+          .venv-xt/bin/pip install -q torch==2.0.0+cpu torchvision==0.15.1+cpu torchaudio==2.0.1 --extra-index-url https://download.pytorch.org/whl/cpu
+          cd xtalker && bash scripts/download_models.sh
+      - run: python main.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: news-video, path: work/news.mp4, retention-days: 2}
+      - name: Save state
+        if: success() && github.event.inputs.dry_run != 'true'
         run: |
-          git config user.name "news-supernova-bot"
-          git config user.email "bot@users.noreply.github.com"
-          git add used_titles.json || true
-          git diff --quiet && git diff --staged --quiet || git commit -m "chore: update used titles log [skip ci]"
-          git push || true
+          git config user.name bot && git config user.email bot@users.noreply.github.com
+          git add used_titles.json recent_titles.json used_openers.json assets 2>/dev/null || true
+          git diff --cached --quiet || { git commit -qm "state"; for i in 1 2 3; do git pull --rebase -q && git push -q && break || sleep 5; done; }
