@@ -19,11 +19,11 @@ STYLES = [
 ]
 SYSTEM = """तुम 'न्यूज़ सुपरनोवा' हिंदी न्यूज़ चैनल की चीफ़ एडिटर और आक्रामक, गरजने वाली प्राइमटाइम महिला एंकर की स्क्रिप्ट राइटर हो।
 सख़्त नियम (कोई भी तोड़ना मना है):
-1. तथ्य: सिर्फ़ दिए गए SOURCE से। कोई नाम, तारीख़, आँकड़ा, जगह, बयान या वजह अपनी तरफ़ से मत जोड़ो। जानकारी कम हो तो कम बोलो। अटकल मत लगाओ। आरोप को आरोप कहो, साबित बात को साबित।
+1. तथ्य: सिर्फ़ दिए गए SOURCE से। कोई नाम, तारीख़, आँकड़ा, जगह, बयान, वजह, मंशा या नतीजा अपनी तरफ़ से मत जोड़ो। 'क्यों हुआ', 'किसने मजबूर किया', 'आगे क्या होगा' जैसी बातें तभी लिखो जब SOURCE में साफ़ लिखी हों। जानकारी कम हो तो कम बोलो। अटकल मत लगाओ। आरोप को आरोप कहो, साबित बात को साबित।
 2. संवेदनशील ख़बरें (मौत, हादसा, अपराध, दंगा): tone 'serious' रखो, सनसनी नहीं, संयमित भाषा।
 3. किसी धर्म, जाति, समुदाय, पार्टी या व्यक्ति के ख़िलाफ़ भड़काऊ, पक्षपाती या अपमानजनक भाषा बिल्कुल नहीं।
 4. भाषा: बोलचाल की देवनागरी हिंदी। बहुत छोटे, ज़ोरदार, चोट करने वाले वाक्य (6-12 शब्द), जहाँ असर चाहिए वहाँ '!' या '?' लगाओ ताकि एंकर गरजकर बोल सके। '%' की जगह 'प्रतिशत', '₹' की जगह 'रुपये' लिखो।
-5. कोई emoji, hashtag, markdown, कोष्ठक, स्टेज-डायरेक्शन या 'एंकर:' जैसा लेबल नहीं। सब्सक्राइब/फ़ॉलो/CTA मत बोलो, वो कोड जोड़ेगा।
+5. anchor_line में 'सबसे बड़ी ख़बर', 'ट्रेंडिंग न्यूज़', 'इस वक़्त' जैसी शुरुआत कभी मत लिखो (वो कोड जोड़ता है)। कोई emoji, hashtag, markdown, कोष्ठक, स्टेज-डायरेक्शन या 'एंकर:' जैसा लेबल नहीं। सब्सक्राइब/फ़ॉलो/CTA मत बोलो, वो कोड जोड़ेगा।
 6. anchor_line: 20-30 शब्द (हुक + मुख्य ख़बर)। voiceover: 30-42 शब्द (पृष्ठभूमि, असर, आगे क्या)।
 7. आउटपुट सिर्फ़ एक valid JSON object, उसके बाहर कुछ नहीं।"""
 SCHEMA = """{
@@ -57,7 +57,9 @@ def _parse(raw):
         if not m: raise ValueError("JSON नहीं मिला")
         return json.loads(m.group(0))
 
-def _check(d, src):
+BAN_START = ("सबसे बड़ी", "इस वक़्त", "इसी वक़्त", "इस वक्त", "इसी वक्त", "ट्रेंडिंग")
+
+def _check(d, src, opener=""):
     need = ["title", "headline", "anchor_line", "voiceover", "tone", "ticker", "tags", "hashtags", "image_queries"]
     miss = [k for k in need if not d.get(k)]
     if miss: return f"ये keys missing हैं: {miss}"
@@ -66,6 +68,10 @@ def _check(d, src):
     a, v = len(d["anchor_line"].split()), len(d["voiceover"].split())
     if not 16 <= a <= 34: return f"anchor_line {a} शब्द की है, 20-30 चाहिए"
     if not 26 <= v <= 48: return f"voiceover {v} शब्द का है, 30-42 चाहिए"
+    al = d["anchor_line"].strip()
+    if al.startswith(BAN_START): return "anchor_line में opener जैसी शुरुआत मत दोहराओ, सीधे ख़बर से शुरू करो"
+    ow, aw = set(re.findall(r"\w+", opener)), re.findall(r"\w+", al)[:3]
+    if opener and len(ow & set(aw)) >= 2: return "anchor_line opener को दोहरा रही है"
     if len(d["headline"].split()) > 10: return "headline 9 शब्द से छोटी रखो"
     body = " ".join([d["anchor_line"], d["voiceover"], d["headline"], d["title"], *map(str, d["ticker"])])
     if re.search(r"[*#_\[\]{}<>\U0001F300-\U0001FAFF]", body): return "markdown/emoji/hashtag मत डालो"
@@ -73,6 +79,21 @@ def _check(d, src):
     if bad: return f"ये अंक SOURCE में नहीं हैं: {sorted(bad)}, इन्हें हटाओ"
     if d["tone"] not in ("breaking", "serious", "positive", "sports", "entertainment"): d["tone"] = "serious"
     return ""
+
+def _verify(client, src, d):
+    """Doosra pass: kaun se daave SOURCE me nahi hain."""
+    q = (f"SOURCE:\n{src}\n\nस्क्रिप्ट:\n{d['anchor_line']} {d['voiceover']}\n\n"
+         "स्क्रिप्ट के वो दावे बताओ जो SOURCE में साफ़ नहीं लिखे (वजह, मंशा, आँकड़े, नाम, भविष्यवाणी, नतीजा)। "
+         'सिर्फ़ JSON: {"unsupported": ["..."]}। कुछ न हो तो खाली list।')
+    try:
+        r = client.chat.completions.create(
+            model=MODEL, temperature=0, max_tokens=2000, response_format={"type": "json_object"},
+            extra_body={"reasoning_effort": "low"},
+            messages=[{"role": "system", "content": "तुम सख़्त फ़ैक्ट-चेकर हो। सिर्फ़ JSON दो।"}, {"role": "user", "content": q}])
+        u = _parse(r.choices[0].message.content or "{}").get("unsupported", [])
+        return [str(x) for x in u if str(x).strip()]
+    except Exception as e:
+        print("[verify] skip:", e); return []
 
 def generate(item):
     client = Groq(api_key=os.environ["GROQ_API_KEY"], timeout=180)
@@ -91,7 +112,10 @@ def generate(item):
             response_format={"type": "json_object"}, extra_body={"reasoning_effort": "low"})
         raw = r.choices[0].message.content or ""
         try:
-            d = _parse(raw); err = _check(d, src)
+            d = _parse(raw); err = _check(d, src, opener)
+            if not err:
+                bad = _verify(client, src, d)
+                if bad: err = f"ये दावे SOURCE में नहीं हैं: {bad}। इन्हें हटाओ या SOURCE के हिसाब से लिखो"
         except Exception as e:
             d, err = None, f"JSON टूटा: {e}"
         if not err: break
