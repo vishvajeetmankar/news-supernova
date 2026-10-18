@@ -10,3 +10,4 @@ google-api-python-client==2.149.0
 numpy==1.26.4
 gTTS==2.5.3
 edge-tts==7.0.0
+mediapipe==0.10.14
