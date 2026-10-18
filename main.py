@@ -17,10 +17,16 @@ def upload(path, d, item):
 
 def main():
     shutil.rmtree(WORK, ignore_errors=True); WORK.mkdir()
-    item = news.fetch_news()
-    if not item: sys.exit("fresh news nahi mili")
-    print("[news]", item["title"])
-    d = script_ai.generate(item)
+    d, tried = None, set()
+    for _ in range(3):   # ek khabar par script na bane to agli khabar try karo
+        item = news.fetch_news(exclude=tried)
+        if not item: break
+        print("[news]", item["title"])
+        try:
+            d = script_ai.generate(item); break
+        except Exception as e:
+            print("[news] script nahi bani, agli khabar:", e); tried.add(item["title"]); news.mark_used(item["title"])
+    if not d: sys.exit("3 khabron par script nahi bani / fresh news nahi mili")
     print("[opener]", repr(d["opener"]), "| tone:", d["tone"])
     print("[script]", json.dumps({k: d[k] for k in ("title", "headline", "anchor_full", "voiceover_full", "tone")}, ensure_ascii=False, indent=1))
     wavA, wavB = voice.synth_parts([d["anchor_full"], d["voiceover_full"]], d["tone"], WORK)
