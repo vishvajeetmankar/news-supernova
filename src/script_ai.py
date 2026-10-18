@@ -24,7 +24,7 @@ SYSTEM = """तुम 'न्यूज़ सुपरनोवा' हिंद
 3. किसी धर्म, जाति, समुदाय, पार्टी या व्यक्ति के ख़िलाफ़ भड़काऊ, पक्षपाती या अपमानजनक भाषा बिल्कुल नहीं।
 4. भाषा: बोलचाल की देवनागरी हिंदी। बहुत छोटे, ज़ोरदार, चोट करने वाले वाक्य (6-12 शब्द), जहाँ असर चाहिए वहाँ '!' या '?' लगाओ ताकि एंकर गरजकर बोल सके। '%' की जगह 'प्रतिशत', '₹' की जगह 'रुपये' लिखो।
 5. anchor_line में 'सबसे बड़ी ख़बर', 'ट्रेंडिंग न्यूज़', 'इस वक़्त' जैसी शुरुआत कभी मत लिखो (वो कोड जोड़ता है)। कोई emoji, hashtag, markdown, कोष्ठक, स्टेज-डायरेक्शन या 'एंकर:' जैसा लेबल नहीं। सब्सक्राइब/फ़ॉलो/CTA मत बोलो, वो कोड जोड़ेगा।
-6. anchor_line: 20-30 शब्द (हुक + मुख्य ख़बर)। voiceover: 30-42 शब्द (पृष्ठभूमि, असर, आगे क्या)।
+6. anchor_line: 20-30 शब्द (हुक + मुख्य ख़बर)। voiceover: 30-42 शब्द (पृष्ठभूमि, असर, आगे क्या)। SOURCE में जानकारी कम हो तो छोटी लिखो (anchor_line 14+, voiceover 24+ शब्द), पर कुछ गढ़ो मत। कोई भी संख्या तभी लिखो जब वो SOURCE में हू-ब-हू लिखी हो।
 7. आउटपुट सिर्फ़ एक valid JSON object, उसके बाहर कुछ नहीं।"""
 SCHEMA = """{
 "title": "यूट्यूब टाइटल, 60 अक्षर तक, हिंदी, दमदार पर सच्चा",
@@ -59,6 +59,9 @@ def _parse(raw):
 
 BAN_START = ("सबसे बड़ी", "इस वक़्त", "इसी वक़्त", "इस वक्त", "इसी वक्त", "ट्रेंडिंग")
 
+def _nums(t):   # 2+ digit numbers (commas hata ke); 1-digit ignore (ek/do jaise shabd)
+    return {n.replace(",", "") for n in re.findall(r"\d[\d,]*\d|\d", t) if len(n.replace(",", "")) >= 2}
+
 def _check(d, src, opener=""):
     need = ["title", "headline", "anchor_line", "voiceover", "tone", "ticker", "tags", "hashtags", "image_queries"]
     miss = [k for k in need if not d.get(k)]
@@ -66,16 +69,15 @@ def _check(d, src, opener=""):
     for k in ("ticker", "tags", "hashtags", "image_queries"):
         if not isinstance(d[k], list): return f"{k} list होनी चाहिए"
     a, v = len(d["anchor_line"].split()), len(d["voiceover"].split())
-    if not 16 <= a <= 34: return f"anchor_line {a} शब्द की है, 20-30 चाहिए"
-    if not 26 <= v <= 48: return f"voiceover {v} शब्द का है, 30-42 चाहिए"
+    if not 12 <= a <= 40: return f"anchor_line {a} शब्द की है, 20-30 चाहिए"
+    if not 20 <= v <= 56: return f"voiceover {v} शब्द का है, 30-42 चाहिए"
     al = d["anchor_line"].strip()
     if al.startswith(BAN_START): return "anchor_line में opener जैसी शुरुआत मत दोहराओ, सीधे ख़बर से शुरू करो"
-    ow, aw = set(re.findall(r"\w+", opener)), re.findall(r"\w+", al)[:3]
-    if opener and len(ow & set(aw)) >= 2: return "anchor_line opener को दोहरा रही है"
     if len(d["headline"].split()) > 10: return "headline 9 शब्द से छोटी रखो"
     body = " ".join([d["anchor_line"], d["voiceover"], d["headline"], d["title"], *map(str, d["ticker"])])
     if re.search(r"[*#_\[\]{}<>\U0001F300-\U0001FAFF]", body): return "markdown/emoji/hashtag मत डालो"
-    bad = set(re.findall(r"\d+", body)) - set(re.findall(r"\d+", src))
+    sn = src.replace(",", "")
+    bad = {n for n in _nums(body) if n not in _nums(src) and n not in sn}
     if bad: return f"ये अंक SOURCE में नहीं हैं: {sorted(bad)}, इन्हें हटाओ"
     if d["tone"] not in ("breaking", "serious", "positive", "sports", "entertainment"): d["tone"] = "serious"
     return ""
@@ -108,7 +110,7 @@ def generate(item):
     err = ""
     for i in range(5):
         r = client.chat.completions.create(
-            model=MODEL, messages=msgs, temperature=0.8, max_tokens=5000,
+            model=MODEL, messages=msgs, temperature=0.7, max_tokens=5000,
             response_format={"type": "json_object"}, extra_body={"reasoning_effort": "low"})
         raw = r.choices[0].message.content or ""
         try:
