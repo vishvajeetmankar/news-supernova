@@ -23,19 +23,19 @@ def _recent():  # fuzzy dedupe ke liye last 60 titles (alag file)
     try: return json.loads(RECENT.read_text("utf-8"))
     except Exception: return []
 
-def _tok(s): return set(re.findall(r"\w+", s.lower()))
+def _tok(s): return set(re.findall(r"[\u0900-\u0963\u0966-\u097F\w]+", s.lower()))   # Devanagari matras ke saath
 
 def _dup(t, seen_hash, recent):
     if _hash(t) in seen_hash: return True
     a = _tok(t)
     return any(len(a & _tok(s)) / max(1, len(a | _tok(s))) > 0.55 for s in recent)
 
-def fetch_news():
+def fetch_news(exclude=()):
     seen, recent = set(_load()), _recent(); feeds = FEEDS[:]; random.shuffle(feeds)
     for f in feeds:
         for e in feedparser.parse(BASE + f).entries[:25]:
             title = re.sub(r"\s+-\s+[^-]+$", "", e.title).encode("utf-8", "ignore").decode("utf-8").strip()
-            if not title or _dup(title, seen, recent): continue
+            if not title or title in exclude or _dup(title, seen, recent): continue
             text = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", e.get("summary", "")))).strip()
             src = (e.get("source") or {}).get("title", "Google News")
             return {"title": title, "text": text, "source": src, "link": e.link}
