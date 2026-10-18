@@ -76,3 +76,31 @@ def synth_parts(parts, tone, outdir):
 
 def concat(a, b, out):
     _ff("-i", a, "-i", b, "-filter_complex", "[0:a][1:a]concat=n=2:v=0:a=1", str(out)); return str(out)
+
+def _dur(p):
+    return float(subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", str(p)],
+                                capture_output=True, text=True).stdout.strip() or 0)
+
+def add_music(voice_wav, out_wav, music_dir=None):
+    """music/ folder ka random gaana, random hissa. Awaaz ke neeche sunai deta hai (voice bolte waqt dabta hai)."""
+    music_dir = Path(music_dir or Path(__file__).resolve().parent.parent / "music")
+    vol = float(os.getenv("MUSIC_VOL", "0.9"))
+    tr = [f for f in music_dir.iterdir() if f.suffix.lower() in (".mp3", ".wav", ".m4a")] if music_dir.exists() else []
+    if not tr or vol <= 0:
+        return str(voice_wav)
+    T = _dur(voice_wav) + 0.6
+    for track in random.sample(tr, len(tr)):
+        try:
+            ss = random.uniform(0, max(0.0, _dur(track) - T - 1))
+            fc = (f"[1:a]apad=pad_dur=0.6,asplit=2[v1][v2];"
+                  f"[0:a]atrim=0:{T:.2f},asetpts=PTS-STARTPTS,volume={vol},afade=t=in:d=0.4,afade=t=out:st={T-1.2:.2f}:d=1.2[m];"
+                  f"[m][v1]sidechaincompress=threshold=0.015:ratio=5:attack=15:release=350:makeup=1[duck];"
+                  f"[duck][v2]amix=inputs=2:normalize=0:duration=longest,alimiter=limit=0.97")
+            r = _ff("-ss", f"{ss:.2f}", "-i", str(track), "-i", str(voice_wav), "-filter_complex", fc, "-t", f"{T:.2f}",
+                    "-ar", "44100", "-ac", "2", str(out_wav))
+            if _ok(str(out_wav)):
+                print(f"[music] {track.name[:40]} vol={vol}"); return str(out_wav)
+            print("[music] mix fail:", (r.stderr or "")[-200:])
+        except Exception as e:
+            print("[music] skip:", e)
+    return str(voice_wav)
