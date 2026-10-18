@@ -4,5 +4,3 @@ __pycache__/
 /tmp/
 assets/*.ttf
 work/
-xtalker/
-.venv-xt/
