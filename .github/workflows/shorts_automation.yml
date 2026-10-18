@@ -1,54 +1,38 @@
 name: News Supernova - Auto Shorts
 on:
-  schedule:   # IST 8:30, 8:45, 9:00, 18:30, 18:45 (video ~25-40 min baad publish hoga)
-    - cron: "0 3 * * *"
+  schedule:   # UTC. IST 8:45, 9:00, 9:15, 18:45, 19:00 (video ~10 min me ban jata hai)
     - cron: "15 3 * * *"
     - cron: "30 3 * * *"
-    - cron: "0 13 * * *"
+    - cron: "45 3 * * *"
     - cron: "15 13 * * *"
+    - cron: "30 13 * * *"
   workflow_dispatch:
     inputs:
-      dry_run: {description: "true = upload skip, sirf test", default: "true"}
+      dry_run: {description: "true = upload skip, sirf test video", default: "false"}
 permissions: {contents: write}
 jobs:
   run:
     runs-on: ubuntu-22.04
-    timeout-minutes: 300
+    timeout-minutes: 90
     env:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GROQ_MODEL: openai/gpt-oss-120b
       FISH_API_KEY: ${{ secrets.FISH_API_KEY }}
       FISH_VOICE_ID: ${{ secrets.FISH_VOICE_ID }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-      GROQ_MODEL: openai/gpt-oss-120b
       YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
       YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
       YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+      MUSIC_VOL: "0.9"
       PYTHONUNBUFFERED: "1"
       PYTHONIOENCODING: utf-8
-      ANCHOR_TIMEOUT: "3600"
       DRY_RUN: ${{ github.event.inputs.dry_run }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: "3.10"}
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto-core fonts-dejavu-core libraqm0 libfribidi0
+        with: {python-version: "3.10", cache: pip}
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto-core fonts-dejavu-core libraqm0 libfribidi0 libgl1 libglib2.0-0
       - run: pip install -r requirements.txt
-      - id: xt
-        uses: actions/cache@v4
-        with:
-          path: |
-            xtalker
-            .venv-xt
-          key: xt-v1-${{ runner.os }}
-      - name: Setup XTalker (sirf pehli baar)
-        if: steps.xt.outputs.cache-hit != 'true'
-        run: |
-          git clone --depth 1 https://github.com/Spycsh/xtalker xtalker
-          python -m venv .venv-xt
-          .venv-xt/bin/pip install -q --upgrade pip
-          .venv-xt/bin/pip install -q -r xtalker/requirements.txt
-          .venv-xt/bin/pip install -q torch==2.0.0+cpu torchvision==0.15.1+cpu torchaudio==2.0.1 --extra-index-url https://download.pytorch.org/whl/cpu
-          cd xtalker && bash scripts/download_models.sh
       - run: python main.py
       - uses: actions/upload-artifact@v4
         if: always()
@@ -57,5 +41,5 @@ jobs:
         if: success() && github.event.inputs.dry_run != 'true'
         run: |
           git config user.name bot && git config user.email bot@users.noreply.github.com
-          git add used_titles.json recent_titles.json used_openers.json assets 2>/dev/null || true
+          git add used_titles.json recent_titles.json used_openers.json 2>/dev/null || true
           git diff --cached --quiet || { git commit -qm "state"; for i in 1 2 3; do git pull --rebase -q && git push -q && break || sleep 5; done; }
