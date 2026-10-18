@@ -4,7 +4,8 @@ from pathlib import Path
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-from src import news, script_ai, voice, anchor, studio
+import json
+from src import news, script_ai, voice, studio
 
 ROOT = Path(__file__).resolve().parent; WORK = ROOT / "work"
 
@@ -21,11 +22,12 @@ def main():
     print("[news]", item["title"])
     d = script_ai.generate(item)
     print("[opener]", repr(d["opener"]), "| tone:", d["tone"])
+    print("[script]", json.dumps({k: d[k] for k in ("title", "headline", "anchor_full", "voiceover_full", "tone")}, ensure_ascii=False, indent=1))
     wavA, wavB = voice.synth_parts([d["anchor_full"], d["voiceover_full"]], d["tone"], WORK)
     wavAll = voice.concat(wavA, wavB, WORK / "all.wav")
-    mp4 = anchor.talk(wavA, WORK / "anchor.mp4")
+    mix = voice.add_music(wavAll, WORK / "mix.wav")
     imgs = news.get_images(d["image_queries"], 3, WORK / "img")
-    out = studio.build(d, wavA, wavB, wavAll, mp4, imgs, WORK / "news.mp4")
+    out = studio.build(d, wavA, wavB, wavAll, mix, imgs, WORK / "news.mp4")
     if os.getenv("DRY_RUN") == "true":
         print("DRY_RUN: upload skip"); return
     vid = upload(out, d, item); print(f"DONE https://youtube.com/shorts/{vid}")
