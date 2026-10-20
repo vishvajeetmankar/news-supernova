@@ -1,5 +1,5 @@
 """Studio render: modern news layout, 1080x1920. Scene A = anchor bada (intro), Scene B = story visuals + anchor kone me."""
-import os
+import os, re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import numpy as np, cv2
@@ -12,6 +12,10 @@ RED, RED2, YEL = (214, 18, 34), (150, 8, 24), (255, 214, 10)
 HEADER, BAND_BOTTOM, CAP_BOTTOM = 150, 1560, 1830
 
 # ---------------- text helpers ----------------
+_BAD = re.compile(r"[^\u0900-\u097F\u200c\u200d\u0020-\u007E\u2018-\u201D\u2013\u2014\u2026]")
+def clean(t):
+    return re.sub(r"\s+", " ", _BAD.sub("", str(t).replace("\u20b9", "रुपये "))).strip()
+
 def font(size, latin=False):
     if os.getenv("FONT_PATH") and not latin: return ImageFont.truetype(os.environ["FONT_PATH"], size)
     pats = ["DejaVuSans-Bold.ttf"] if latin else ["NotoSansDevanagari-Bold.ttf", "NotoSansDevanagari*.ttf", "*Devanagari*.ttf"]
@@ -60,14 +64,14 @@ def base_overlay(headline):
     txt(d, (50, 46), "NEWS SUPERNOVA", font(48, True), (255, 255, 255, 255))
     d.rounded_rectangle([W - 330, 40, W - 28, 108], radius=34, outline=(255, 255, 255, 120), width=2, fill=(255, 255, 255, 22))
     d.text((W - 305, 55), ist_date(), font=font(34, True), fill=(255, 255, 255, 255))
-    hf = font(60); lines = wrap(d, headline, hf, W - 100)[:3]
+    hf = font(60); lines = wrap(d, clean(headline), hf, W - 100)[:3]
     y0 = BAND_BOTTOM - (46 + 76 * len(lines))
     band = np.zeros((BAND_BOTTOM - y0, W, 4), "float32")
-    band[..., :3] = np.linspace(RED, RED2, W, dtype="float32")[None, :, :]; band[..., 3] = 250
+    band[..., :3] = np.linspace(RED, RED2, W, dtype="float32")[None, :, :]; band[..., 3] = 255
     im.alpha_composite(Image.fromarray(band.astype("uint8"), "RGBA"), (0, y0))
     d.rectangle([0, y0 - 7, W, y0], fill=YEL + (255,))
     for i, l in enumerate(lines): txt(d, (48, y0 + 22 + 76 * i), l, hf, (255, 255, 255, 255))
-    d.rectangle([0, BAND_BOTTOM, W, CAP_BOTTOM], fill=(6, 10, 26, 246))
+    d.rectangle([0, BAND_BOTTOM, W, CAP_BOTTOM], fill=(6, 10, 26, 255))
     d.rectangle([0, CAP_BOTTOM, W, H], fill=(255, 255, 255, 255))
     return np.array(im), y0
 
@@ -96,7 +100,7 @@ def cap_img(text):
     return np.array(im)
 
 def ticker_img(items, dur):
-    f = font(40); s = "   |   ".join(map(str, items)) + "   |   "
+    f = font(40); s = "   |   ".join(clean(i) for i in items) + "   |   "
     w1 = int(ImageDraw.Draw(Image.new("RGBA", (1, 1))).textlength(s, font=f)) + 1
     reps = int((W + 200 + dur * 170) // w1) + 2
     im = Image.new("RGBA", (w1 * reps, 90), (0, 0, 0, 0)); d = ImageDraw.Draw(im)
@@ -126,17 +130,14 @@ def rounded(clip, w, h, r, dur):
     return clip.set_mask(ImageClip(rmask(w, h, r), ismask=True).set_duration(dur))
 
 # ---------------- anchor layers ----------------
-def anchor_layer(P, env, t0, dur, out_w, x, y_bottom):
+def anchor_layer(P, t0, dur, out_w, x, y_bottom):
     """Puppet anchor ka clip [t0, t0+dur). Alpha mask + soft shadow ke saath."""
     out_h = int(round(P.h * out_w / P.w)); y = y_bottom - out_h
-    sh = A.shadow_alpha(P.camera(P.rgba, 0, 0, out_w))
-    cache = {}
+    sh = A.shadow_alpha(P.camera(P.rgba, 0, out_w)); cache = {}
     def fr(t):
         g = t0 + t; key = int(round(g * FPS))
         if cache.get("k") != key:
-            o = float(env[min(key, len(env) - 1)])
-            cam = P.camera(P.frame(g, o), g, o, out_w); rgb, a = A.with_shadow(cam, sh)
-            cache.update(k=key, rgb=rgb, a=a)
+            cam = P.render(g, out_w); rgb, a = A.with_shadow(cam, sh); cache.update(k=key, rgb=rgb, a=a)
         return cache
     col = VideoClip(lambda t: fr(t)["rgb"], duration=dur)
     msk = VideoClip(lambda t: fr(t)["a"], ismask=True, duration=dur)
@@ -148,7 +149,7 @@ def static_anchor_layer(path, t0, dur, out_w, x, y_bottom):   # fallback (mediap
     return c.set_duration(dur).set_start(t0).set_position((x, y_bottom - h))
 
 def caps(text, t0, dur):
-    w = text.split(); cs = [" ".join(w[i:i + 5]) for i in range(0, len(w), 5)]
+    w = clean(text).split(); cs = [" ".join(w[i:i + 5]) for i in range(0, len(w), 5)]
     tot = sum(len(c) for c in cs); t = t0; out = []
     for c in cs:
         d = dur * len(c) / tot
@@ -171,17 +172,21 @@ def build(d, wavA, wavB, wavAll, mixwav, images, out):
     win = rounded(broll(bimgs, dB, (bw_, bh_)), bw_, bh_, 28, dB).set_start(dA).set_position((bx, by))
     gl2, pad2 = frame_glow(bw_, bh_, 28)
     layers += [win, ImageClip(gl2).set_start(dA).set_duration(dB).set_position((bx - pad2, by - pad2))]
-    # Anchor: A me bada (beech me), B me kone me (neeche-daayen) — poori awaaz par lip-sync
+    # Anchor: A me bada (beech me), B me kone me (neeche-daayen) - poori awaaz par lip-sync
+    base, y0 = base_overlay(d["headline"])
     try:
-        P = A.Puppet(); env = A.envelope(wavAll)
-        layers.append(anchor_layer(P, env, 0, dA, 820, (W - 820) // 2, BAND_BOTTOM))
-        layers.append(anchor_layer(P, env, dA, T - dA, 560, W - 560 - 20, BAND_BOTTOM))
+        P = A.Puppet(); P.prepare(wavAll)
+        if os.getenv("ANCHOR_FRAMING", "bust") == "head":      # sirf sir+kandhe: seena headline-band ke peeche
+            wA, wB = 940, 600; yb = lambda w: y0 - (P.L[152][1] + 0.5 * P.fh) * (w / P.w) + P.h * (w / P.w)
+        else:
+            wA, wB = 820, 560; yb = lambda w: BAND_BOTTOM
+        layers.append(anchor_layer(P, 0, dA, wA, (W - wA) // 2, yb(wA)))
+        layers.append(anchor_layer(P, dA, T - dA, wB, W - wB - 20, yb(wB)))
     except Exception as e:
         print("[anchor] puppet fail ->", repr(e), "| static anchor")
         layers.append(static_anchor_layer(A.IMG, 0, dA, 820, (W - 820) // 2, BAND_BOTTOM))
         layers.append(static_anchor_layer(A.IMG, dA, T - dA, 560, W - 560 - 20, BAND_BOTTOM))
     # Overlays
-    base, y0 = base_overlay(d["headline"])
     layers.append(ImageClip(base).set_duration(T))
     layers.append(ImageClip(ticker_img(d["ticker"], T)).set_duration(T).set_position(lambda t: (W - 170 * t, CAP_BOTTOM)))
     layers.append(ImageClip(top_overlay()).set_duration(T).fx(vfx.fadein, 0.7))
