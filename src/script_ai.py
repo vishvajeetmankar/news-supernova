@@ -75,7 +75,7 @@ def _check(d, src, opener=""):
     if al.startswith(BAN_START): return "anchor_line में opener जैसी शुरुआत मत दोहराओ, सीधे ख़बर से शुरू करो"
     if len(d["headline"].split()) > 10: return "headline 9 शब्द से छोटी रखो"
     body = " ".join([d["anchor_line"], d["voiceover"], d["headline"], d["title"], *map(str, d["ticker"])])
-    if re.search(r"[*#_\[\]{}<>\U0001F300-\U0001FAFF]", body): return "markdown/emoji/hashtag मत डालो"
+    if re.search(r"[*#_\[\]{}<>\U0001F000-\U0001FFFF\u2600-\u27BF\u2B00-\u2BFF]", body): return "markdown/emoji/hashtag मत डालो"
     sn = src.replace(",", "")
     bad = {n for n in _nums(body) if n not in _nums(src) and n not in sn}
     if bad: return f"ये अंक SOURCE में नहीं हैं: {sorted(bad)}, इन्हें हटाओ"
