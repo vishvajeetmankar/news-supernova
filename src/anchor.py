@@ -72,7 +72,7 @@ class Puppet:
         self.seam_u, self.seam_v = uu[os_], sv[os_]
         self.roi, self.X, self.Y = self._roi(self.c[0] - 1.8 * self.mw, self.c[1] - 1.0 * self.mw, self.c[0] + 1.8 * self.mw, L[152][1] + 0.7 * self.mw)
         self.Mf = self._mfield(self.X, self.Y)
-        self.dmax = 0.20 * self.mw
+        self.dmax = 0.23 * self.mw
 
     def _mfield(self, X, Y):
         U = (X - self.c[0]) * self.u[0] + (Y - self.c[1]) * self.u[1]; V = (X - self.c[0]) * self.n[0] + (Y - self.c[1]) * self.n[1]
@@ -126,7 +126,10 @@ class Puppet:
         slow = np.convolve(np.pad(env, (6, 0), mode="edge"), np.ones(7) / 7, "valid")[:N]
         beat = _gs(np.clip(env - slow, 0, 1), 1.6)                                           # emphasis peaks
         beat = beat / (beat.max() + 1e-6)
-        fric = _ss(cen, 0.55, 0.85) * (env > 0.1)
+        vm = env > 0.1; med = float(np.median(cen[vm])) if vm.any() else 0.3     # speaker ke apne median ke hisaab se shape
+        fric = _ss(cen, med + 0.22, med + 0.42) * vm
+        open_ = np.clip(_gs(env, 0.9) * 0.92 * (1 - 0.5 * fric), 0, 1)                       # halka smooth: frame-to-frame chatter nahi
+        width = np.clip(_gs((cen - med) * 2.4, 1.6), -0.7, 0.8)
         blink = np.zeros(N); x = r.uniform(0.8, 2.0)
         while x < N / FPS:
             for k in range(6):                                                                # 0.24s blink
@@ -135,8 +138,7 @@ class Puppet:
             x += r.uniform(2.2, 4.6)
         self.m = dict(
             N=N, env=env,
-            open=np.clip(env * 0.92 * (1 - 0.5 * fric), 0, 1),
-            width=np.clip(_gs((cen - 0.45) * 1.7, 1.2), -0.8, 0.9),
+            open=open_, width=width,
             roll=0.65 * sn([(0.21, 1), (0.53, 0.5)]) + 0.9 * beat * np.sin(np.arange(N) * 0.31),
             yaw=sn([(0.17, 1), (0.41, 0.5)]) + 0.8 * _gs(env - slow, 4),
             tx=1.8 * sn([(0.19, 1)]), ty=2.2 * sn([(0.23, 1), (0.6, 0.3)]) + 6.0 * beat,
