@@ -5,10 +5,10 @@ import requests
 LOUD = "[shouting, loud, aggressive female news anchor, high energy] "
 TAGS = {"serious": "[firm, loud, serious female news anchor] "}   # baaki sab LOUD
 # bass + presence + heavy compression + loud limiter = "chillati anchor" wala punch
-EQ = ("highpass=f=75,equalizer=f=140:t=q:w=1:g=3.5,equalizer=f=300:t=q:w=1.2:g=-1.5,"      # bass/body (high-bass), boxiness kam
-      "equalizer=f=3600:t=q:w=1.5:g=-2.5,equalizer=f=6500:t=q:w=1.2:g=-2,lowpass=f=12000,"    # shrill/harsh kam
-      "acompressor=threshold=0.09:ratio=3:attack=8:release=120:makeup=2,"
-      "loudnorm=I=-14:TP=-1.5:LRA=9")
+# CLASSIC chain: teri pasand wali pehli video isi se bani thi (bass + presence + heavy compress + loud limiter)
+EQ = ("highpass=f=80,equalizer=f=120:t=q:w=1:g=5,equalizer=f=3500:t=q:w=1.2:g=4,"
+      "acompressor=threshold=0.05:ratio=6:attack=3:release=60:makeup=4,"
+      "loudnorm=I=-11:TP=-1:LRA=7,alimiter=limit=0.95")
 
 def _ff(*a): return subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *a], capture_output=True, text=True)
 
@@ -33,16 +33,16 @@ def _fish(text, tone, out):
     if os.getenv("FISH_TAGS", "1") == "1":
         text = (os.getenv("FISH_TAG") or TAGS.get(tone, LOUD)) + text
     body = {"text": text, "reference_id": vid, "format": "mp3", "latency": "normal",
-            "prosody": {"speed": round(random.uniform(1.00, 1.06), 2), "volume": 0}}
+            "prosody": {"speed": round(random.uniform(1.08, 1.15), 2), "volume": 0}}
     r = requests.post("https://api.fish.audio/v1/tts", json=body, timeout=180,
                       headers={"Authorization": f"Bearer {key}", "model": os.getenv("FISH_MODEL", "s2.1-pro-free")})
     r.raise_for_status(); Path(out).write_bytes(r.content)
 
 def _edge(text, tone, out):   # Swara = female
     import edge_tts
-    rate, pitch = {"serious": ("+2%", "-4Hz"), "breaking": ("+10%", "-1Hz")}.get(tone, ("+6%", "-3Hz"))
+    rate, pitch = {"serious": ("+6%", "+0Hz"), "breaking": ("+20%", "+8Hz")}.get(tone, ("+15%", "+5Hz"))
     asyncio.run(edge_tts.Communicate(text, os.getenv("EDGE_VOICE", "hi-IN-SwaraNeural"),
-                                     rate=rate, pitch=pitch, volume="+25%").save(out))
+                                     rate=rate, pitch=pitch, volume="+40%").save(out))
 
 def _gtts(text, tone, out):
     from gtts import gTTS
@@ -57,13 +57,12 @@ def _has_filter(name):
 
 def _master(raw, wav):
     """Pitch thoda neeche (awaaz bharee, kam shrill) + EQ + compress + loudness. Chain fail ho to saada chain."""
-    st = float(os.getenv("VOICE_PITCH", "-2"))                      # semitones; 0 = band
+    st = float(os.getenv("VOICE_PITCH", "0"))                       # semitones; 0 = band (default)
     pre = []
     if abs(st) > 0.05:
         if _has_filter("rubberband"): pre.append(f"rubberband=pitch={2 ** (st / 12):.4f}:formant=preserved")
         else: pre.append(f"asetrate={int(44100 * 2 ** (st / 12))},aresample=44100,atempo={2 ** (-st / 12):.4f}")
     chains = []
-    if _has_filter("deesser"): chains.append(",".join(pre + ["deesser=i=0.35:f=0.5", EQ]))
     chains.append(",".join(pre + [EQ])); chains.append(EQ)
     for ch in chains:
         r = _ff("-i", str(raw), "-af", ch, "-ar", "44100", "-ac", "1", str(wav))
@@ -103,7 +102,7 @@ def _dur(p):
 def add_music(voice_wav, out_wav, music_dir=None):
     """music/ folder ka random gaana, random hissa. Awaaz ke neeche sunai deta hai (voice bolte waqt dabta hai)."""
     music_dir = Path(music_dir or Path(__file__).resolve().parent.parent / "music")
-    lufs = float(os.getenv("MUSIC_LUFS", "-24"))                # awaaz ~ -14 LUFS; music usse ~10 dB neeche
+    lufs = float(os.getenv("MUSIC_LUFS", "-24"))                # awaaz ~ -11 LUFS; music (bass-kata) usse ~15 dB neeche
     tr = [f for f in music_dir.iterdir() if f.suffix.lower() in (".mp3", ".wav", ".m4a")] if music_dir.exists() else []
     if not tr or lufs <= -60:
         return str(voice_wav)
@@ -112,8 +111,8 @@ def add_music(voice_wav, out_wav, music_dir=None):
         try:
             ss = random.uniform(0, max(0.0, _dur(track) - T - 1))
             fc = (f"[1:a]apad=pad_dur=0.6,asplit=2[v1][v2];"
-                  f"[0:a]loudnorm=I={lufs}:TP=-2:LRA=11,aresample=44100,atrim=0:{T:.2f},asetpts=PTS-STARTPTS,afade=t=in:d=0.4,afade=t=out:st={T-1.2:.2f}:d=1.2[m];"
-                  f"[m][v1]sidechaincompress=threshold=0.03:ratio=3:attack=20:release=500:makeup=1[duck];"
+                  f"[0:a]highpass=f=220,lowpass=f=6500,loudnorm=I={lufs}:TP=-2:LRA=11,aresample=44100,atrim=0:{T:.2f},asetpts=PTS-STARTPTS,afade=t=in:d=0.4,afade=t=out:st={T-1.2:.2f}:d=1.2[m];"
+                  f"[m][v1]sidechaincompress=threshold=0.03:ratio=4:attack=20:release=500:makeup=1[duck];"
                   f"[duck][v2]amix=inputs=2:normalize=0:duration=longest,alimiter=limit=0.97")
             r = _ff("-stream_loop", "-1", "-ss", f"{ss:.2f}", "-t", f"{T + 6:.2f}", "-i", str(track), "-i", str(voice_wav), "-filter_complex", fc, "-t", f"{T:.2f}",
                     "-ar", "44100", "-ac", "1", str(out_wav))
